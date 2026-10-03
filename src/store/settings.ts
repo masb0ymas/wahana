@@ -29,6 +29,8 @@ export interface Prefs {
   sendTyping: boolean;
   /** When to send read receipts (blue ticks): on opening a chat, only when you reply, or never. */
   readReceipts: ReadReceipts;
+  /** Order of the chat-list filter tabs, rearranged by dragging. */
+  chatTabOrder: string[];
   // ── AI ──
   aiProvider: "anthropic" | "openai-compatible";
   aiBaseUrl: string;
@@ -80,6 +82,7 @@ const DEFAULT_PREFS: Prefs = {
   linkPreviews: true,
   sendTyping: true,
   readReceipts: "always",
+  chatTabOrder: ["all", "unread", "private", "groups", "community", "channels"],
   aiProvider: "openai-compatible",
   aiBaseUrl: "",
   aiModel: "",

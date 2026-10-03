@@ -95,6 +95,8 @@ pub struct ChatInfo {
     /// What the phone says about muting: 0 = not muted, -1 = muted for good, otherwise the
     /// end time in epoch ms. `None` when nothing was ever recorded.
     pub muted_until: Option<i64>,
+    /// Name of the community this group belongs to, if any.
+    pub community: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -836,8 +838,9 @@ fn record_message(
     emit_account(app, account);
 }
 
-/// Names group chats by their subject. Groups are only listed by the server on request,
-/// so this runs on every connect; a failure just leaves groups named by their id.
+/// Names group chats by their subject and records the community each belongs to. Groups are
+/// only listed by the server on request, so this runs on every connect; a failure just leaves
+/// groups named by their id.
 async fn load_group_names(app: &AppHandle, account: &WaAccount, generation: u64, client: &Client) {
     let groups = match client.groups().get_participating().await {
         Ok(groups) => groups,
@@ -852,6 +855,13 @@ async fn load_group_names(app: &AppHandle, account: &WaAccount, generation: u64,
     let result = account.db.lock().unwrap().batch(|db| {
         for (jid, meta) in &groups {
             db.set_name(&jid.to_string(), &meta.subject, NameSource::GroupSubject)?;
+            db.set_community(
+                &jid.to_string(),
+                meta.parent_group_jid
+                    .as_ref()
+                    .map(|p| p.to_string())
+                    .as_deref(),
+            )?;
         }
         Ok(())
     });

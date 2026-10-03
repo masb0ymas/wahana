@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   CheckCheck,
@@ -32,7 +32,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
 import { LANGUAGES, aiConfigured, langName, translate } from "@/lib/ai";
 import { formatBytes } from "@/lib/mediaCache";
-import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isGroup } from "@/lib/utils";
+import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isDirect, isGroup } from "@/lib/utils";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import { applyMentions, memberLabel, mentionResolver, type PickedMention } from "@/lib/mentions";
 import {
@@ -57,7 +57,7 @@ import { usePicture } from "@/screens/whatsapp/usePicture";
 import { useNativeTyping } from "@/screens/whatsapp/useNativeTyping";
 import { TypingBubble } from "@/components/TypingBubble";
 import { NativeMediaView, cacheSentMedia, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
-import { readReceiptsFor, sendTypingFor, useReadReceipts } from "@/store/settings";
+import { readReceiptsFor, sendTypingFor, useReadReceipts, useSettings } from "@/store/settings";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { useDrafts } from "@/store/drafts";
 import { Pairing } from "@/screens/whatsapp/Pairing";
@@ -96,7 +96,26 @@ function chatLabel(chat: NativeChat | undefined, chatId: string) {
   return { title: chat.phone, pushName: chat.name !== chat.phone ? chat.name : null };
 }
 
-type Filter = "all" | "unread" | "groups" | "channels";
+type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels";
+
+/** Every filter tab, in the default order. */
+const KNOWN_FILTERS: Filter[] = ["all", "unread", "private", "groups", "community", "channels"];
+
+/**
+ * Keeps a stored tab order usable: unknown ids are dropped and missing known filters are
+ * inserted at their default position, so an order saved before a tab existed (or a custom
+ * one) gains the new tabs without losing the user's arrangement.
+ */
+function sanitizeTabOrder(order: string[]): Filter[] {
+  const known = [...new Set(order.filter((f): f is Filter => (KNOWN_FILTERS as string[]).includes(f)))];
+  for (const f of KNOWN_FILTERS) {
+    if (known.includes(f)) continue;
+    // Insert before the first known filter that follows it by default, else append.
+    const after = KNOWN_FILTERS.slice(KNOWN_FILTERS.indexOf(f) + 1).find((x) => known.includes(x));
+    known.splice(after ? known.indexOf(after) : known.length, 0, f);
+  }
+  return known;
+}
 
 /** WhatsApp only accepts edits within this long after sending. */
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -240,6 +259,68 @@ function ChatList({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const savedTabOrder = useSettings((s) => s.chatTabOrder);
+  const [tabOrder, setTabOrder] = useState<Filter[]>(() => sanitizeTabOrder(savedTabOrder));
+  const tabOrderRef = useRef(tabOrder);
+  tabOrderRef.current = tabOrder;
+  useEffect(() => {
+    setTabOrder(sanitizeTabOrder(savedTabOrder));
+  }, [savedTabOrder]);
+  // Tabs are reordered by pointer (not HTML5 drag-and-drop, which Tauri's window drag-drop
+  // handler breaks on Windows). Chips are found by ref to decide the drop slot.
+  const chipRefs = useRef(new Map<Filter, HTMLButtonElement>());
+  const dragRef = useRef<{ id: Filter; x: number; y: number; active: boolean } | null>(null);
+  const [draggingTab, setDraggingTab] = useState<Filter | null>(null);
+  const suppressTabClick = useRef(false);
+  const onTabPointerDown = (e: React.PointerEvent<HTMLButtonElement>, id: Filter) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { id, x: e.clientX, y: e.clientY, active: false };
+    suppressTabClick.current = false;
+  };
+  const onTabPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (!drag.active) {
+      // A small threshold keeps a plain click from starting a drag.
+      if (Math.abs(e.clientX - drag.x) < 4 && Math.abs(e.clientY - drag.y) < 4) return;
+      drag.active = true;
+      setDraggingTab(drag.id);
+    }
+    // The nearest chip by its center decides the new slot, so wrapped rows work too.
+    let nearest: Filter = drag.id;
+    let best = Infinity;
+    for (const [id, el] of chipRefs.current) {
+      const r = el.getBoundingClientRect();
+      const dist = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+      if (dist < best) {
+        best = dist;
+        nearest = id;
+      }
+    }
+    if (nearest === drag.id) return;
+    setTabOrder((order) => {
+      const from = order.indexOf(drag.id);
+      const to = order.indexOf(nearest);
+      if (from < 0 || to < 0 || from === to) return order;
+      const next = [...order];
+      next.splice(from, 1);
+      next.splice(to, 0, drag.id);
+      return next;
+    });
+  };
+  const onTabPointerUp = () => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!drag?.active) return;
+    suppressTabClick.current = true;
+    setDraggingTab(null);
+    void useSettings.getState().save({ chatTabOrder: tabOrderRef.current });
+  };
+  const onTabPointerCancel = () => {
+    dragRef.current = null;
+    setDraggingTab(null);
+  };
   const pinned = useChatPrefs((s) => s.pinned);
   const muted = useChatPrefs((s) => s.muted);
   const labelsTick = useWhatsApp((s) => s.labelsTick);
@@ -268,7 +349,9 @@ function ChatList({
     const needle = q.trim().toLowerCase();
     const list = chats.filter((c) => {
       if (filter === "unread" && c.unread === 0) return false;
+      if (filter === "private" && !isDirect(c.id)) return false;
       if (filter === "groups" && !isGroup(c.id)) return false;
+      if (filter === "community" && !c.community) return false;
       if (filter === "channels" && !isChannel(c.id)) return false;
       if (!needle) return true;
       return (
@@ -278,6 +361,8 @@ function ChatList({
         c.lastText.toLowerCase().includes(needle)
       );
     });
+    // The community filter groups by community name, keeping the recency order inside one.
+    if (filter === "community") return [...list].sort((a, b) => (a.community ?? "").localeCompare(b.community ?? ""));
     // Pinned chats float to the top (most recently pinned first), like WhatsApp.
     return [...list].sort((a, b) => (pinned[nativeChatKey(account.id, b.id)] ?? 0) - (pinned[nativeChatKey(account.id, a.id)] ?? 0));
   }, [chats, q, filter, pinned, account.id]);
@@ -361,13 +446,28 @@ function ChatList({
           />
         </div>
         <div className="flex gap-1 items-center flex-wrap">
-          {(["all", "unread", "groups", "channels"] as const).map((f) => (
+          {tabOrder.map((f) => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              ref={(el) => {
+                if (el) chipRefs.current.set(f, el);
+                else chipRefs.current.delete(f);
+              }}
+              onPointerDown={(e) => onTabPointerDown(e, f)}
+              onPointerMove={onTabPointerMove}
+              onPointerUp={onTabPointerUp}
+              onPointerCancel={onTabPointerCancel}
+              onClick={() => {
+                if (suppressTabClick.current) {
+                  suppressTabClick.current = false;
+                  return;
+                }
+                setFilter(f);
+              }}
               className={cn(
-                "rounded-full px-2 py-0.5 text-[11px] font-medium capitalize whitespace-nowrap",
+                "rounded-full px-2 py-0.5 text-[11px] font-medium capitalize whitespace-nowrap touch-none select-none",
                 filter === f ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
+                draggingTab === f && "cursor-grabbing opacity-70 scale-105",
               )}
             >
               {f}
@@ -446,31 +546,35 @@ function ChatList({
                 : "No chats yet."}
           </div>
         ) : (
-          shown.map((c) => {
+          shown.map((c, i) => {
             const key = nativeChatKey(account.id, c.id);
             const chips = (labelMap[c.id] ?? [])
               .map((lid) => labels.find((l) => l.id === lid))
               .filter((l): l is NativeLabel => !!l)
               .map((l) => ({ name: l.name, color: labelColorHex(l.color) }));
             return (
-              <ChatRow
-                key={c.id}
-                chat={c}
-                accountId={account.id}
-                connected={account.status === "working"}
-                active={!selecting && c.id === selected}
-                pinned={!!pinned[key]}
-                muted={isMutedUntil(muted[key])}
-                chips={chips}
-                selecting={selecting}
-                checked={picked.has(c.id)}
-                onClick={() => (selecting ? toggle(c.id) : onSelect(c.id))}
-                onMenu={(e) => {
-                  e.preventDefault();
-                  if (selecting) return toggle(c.id);
-                  setMenu({ chat: c, x: e.clientX, y: e.clientY });
-                }}
-              />
+              <Fragment key={c.id}>
+                {filter === "community" && c.community !== shown[i - 1]?.community && (
+                  <div className="px-3 py-1 text-[11px] uppercase text-neutral-500">{c.community}</div>
+                )}
+                <ChatRow
+                  chat={c}
+                  accountId={account.id}
+                  connected={account.status === "working"}
+                  active={!selecting && c.id === selected}
+                  pinned={!!pinned[key]}
+                  muted={isMutedUntil(muted[key])}
+                  chips={chips}
+                  selecting={selecting}
+                  checked={picked.has(c.id)}
+                  onClick={() => (selecting ? toggle(c.id) : onSelect(c.id))}
+                  onMenu={(e) => {
+                    e.preventDefault();
+                    if (selecting) return toggle(c.id);
+                    setMenu({ chat: c, x: e.clientX, y: e.clientY });
+                  }}
+                />
+              </Fragment>
             );
           })
         )}

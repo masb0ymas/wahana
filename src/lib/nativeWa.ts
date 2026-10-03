@@ -37,6 +37,8 @@ export interface NativeChat {
   saved: boolean;
   /** Mute state mirrored from the phone: 0 = not muted, -1 = for good, else end time (epoch ms). Absent = unknown. */
   mutedUntil?: number | null;
+  /** Name of the community this group belongs to, if any. */
+  community: string | null;
 }
 
 export interface NativeMedia {

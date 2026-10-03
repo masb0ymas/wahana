@@ -52,6 +52,11 @@ export function isChannel(id: string | null | undefined) {
   return !!id && id.endsWith("@newsletter");
 }
 
+/** A one-to-one chat with a person (phone-number or privacy id), not a group, channel or broadcast. */
+export function isDirect(id: string | null | undefined) {
+  return !!id && (id.endsWith("@s.whatsapp.net") || id.endsWith("@lid"));
+}
+
 export function initials(name: string) {
   return name
     .split(/\s+/)

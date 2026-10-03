@@ -17,7 +17,7 @@ use crate::whatsapp::{
 };
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 13;
+const SCHEMA_VERSION: i64 = 14;
 const STATUS_CHAT: &str = "status@broadcast";
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
@@ -282,6 +282,12 @@ impl ChatDb {
             // reply or reaction to a story.
             conn.execute_batch("ALTER TABLE messages ADD COLUMN quote_chat TEXT;")?;
         }
+        if version < 14 {
+            // A community's subgroups (including its announcement group) by parent group.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS communities (id TEXT PRIMARY KEY, parent TEXT NOT NULL);",
+            )?;
+        }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
@@ -417,6 +423,22 @@ impl ChatDb {
             "INSERT INTO lid_pn (lid, pn) VALUES (?1, ?2) ON CONFLICT (lid) DO UPDATE SET pn = excluded.pn",
             params![lid, pn],
         )?;
+        Ok(())
+    }
+
+    /// Records which community a group belongs to (see the `communities` table); `None`
+    /// forgets it.
+    pub fn set_community(&self, id: &str, parent: Option<&str>) -> rusqlite::Result<()> {
+        match parent {
+            Some(parent) => self.conn.execute(
+                "INSERT INTO communities (id, parent) VALUES (?1, ?2)
+                 ON CONFLICT (id) DO UPDATE SET parent = excluded.parent",
+                params![id, parent],
+            )?,
+            None => self
+                .conn
+                .execute("DELETE FROM communities WHERE id = ?1", params![id])?,
+        };
         Ok(())
     }
 
@@ -822,8 +844,23 @@ impl ChatDb {
             };
             let group = id.ends_with("@g.us");
             let muted_until = self.mute_for(&id)?;
+            let community = self
+                .conn
+                .query_row(
+                    "SELECT parent FROM communities WHERE id = ?1",
+                    params![id],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()?
+                .map(|parent| {
+                    self.resolve(&parent)
+                        .ok()
+                        .and_then(|r| r.name.map(|(n, _)| n))
+                        .unwrap_or_else(|| fallback_name(&parent))
+                });
             chats.push(ChatInfo {
                 muted_until,
+                community,
                 saved: group
                     || who
                         .name

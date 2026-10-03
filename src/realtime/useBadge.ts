@@ -11,8 +11,8 @@ export function useBadge(unread: number) {
       .then((tray) => {
         if (!tray) return;
         void tray.setTooltip(unread > 0 ? `Wahana — ${unread} unread` : "Wahana");
-        // macOS shows a text label beside the tray icon.
-        void tray.setTitle(unread > 0 ? String(unread) : null).catch(() => {});
+        // macOS shows a text label beside the tray icon; null does not clear it, so pass "".
+        void tray.setTitle(unread > 0 ? String(unread) : "").catch(() => {});
       })
       .catch(() => {});
   }, [unread]);

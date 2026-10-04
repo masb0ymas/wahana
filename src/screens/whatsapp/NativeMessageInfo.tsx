@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, CheckCheck, Loader2, X } from "lucide-react";
+import { Check, CheckCheck, ChevronDown, Loader2, X } from "lucide-react";
 import { nativeWa, type NativeMessage, type NativeReceipt } from "@/lib/nativeWa";
 import { cn, errMsg, isGroup } from "@/lib/utils";
 import { Avatar } from "@/components/ui";
@@ -148,16 +148,23 @@ function Section({
   at: (r: NativeReceipt) => number | null;
   onRowClick?: (r: NativeReceipt) => void;
 }) {
+  const [open, setOpen] = useState(true);
   if (rows.length === 0) return null;
   const ordered = [...rows].sort((a, b) => (at(b) ?? 0) - (at(a) ?? 0));
   return (
     <div className="mt-2 border-t border-neutral-100 dark:border-neutral-800 pt-2">
-      <div className="text-xs font-medium text-neutral-500 mb-1">
-        {title} ({rows.length})
-      </div>
-      {ordered.map((r) => (
-        <ReceiptRow key={r.id} accountId={accountId} connected={connected} r={r} at={at} onRowClick={onRowClick} />
-      ))}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-1 text-xs font-medium text-neutral-500 mb-1 hover:text-neutral-700 dark:hover:text-neutral-300"
+      >
+        <ChevronDown size={13} className={cn("transition-transform", !open && "-rotate-90")} />
+        <span>
+          {title} ({rows.length})
+        </span>
+      </button>
+      {open &&
+        ordered.map((r) => <ReceiptRow key={r.id} accountId={accountId} connected={connected} r={r} at={at} onRowClick={onRowClick} />)}
     </div>
   );
 }

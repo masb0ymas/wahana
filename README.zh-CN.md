@@ -160,6 +160,14 @@ Wahana 免费，是利用业余时间、主要借助 AI 编程工具开发的。
 
 用手机相机扫描即可打开 `trakteer.id/adamshafizullah/tip`。
 
+## 贡献者
+
+Wahana 的存在离不开每一位贡献者。
+
+<a href="https://github.com/ashafizullah/wahana/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ashafizullah/wahana" alt="贡献者" />
+</a>
+
 ## 许可证
 
 [MIT](LICENSE) © Adam Suchi Hafizullah

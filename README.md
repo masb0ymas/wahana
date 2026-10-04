@@ -160,6 +160,14 @@ Wahana is free and built in spare time, mostly with AI coding tools. If it saves
 
 Scan with your phone camera; it opens `trakteer.id/adamshafizullah/tip`.
 
+## Contributors
+
+Wahana exists thanks to everyone who has contributed.
+
+<a href="https://github.com/ashafizullah/wahana/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ashafizullah/wahana" alt="Contributors" />
+</a>
+
 ## License
 
 [MIT](LICENSE) © Adam Suchi Hafizullah

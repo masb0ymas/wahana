@@ -62,15 +62,16 @@ const mediaLabel: Record<string, string> = {
   document: "[document]",
 };
 
+/** One transcript line (`[date time] Name: text`). */
+function transcriptLine(m: NativeMessage) {
+  const who = m.fromMe ? "You" : m.senderName || m.senderPhone || "Them";
+  const media = m.media ? (m.media.kind === "document" ? `[document: ${m.media.fileName ?? ""}]` : mediaLabel[m.media.kind]) : "";
+  return `[${new Date(m.timestamp).toLocaleString()}] ${who}: ${[media, m.body].filter(Boolean).join(" ")}`;
+}
+
 /** Plain-text transcript (`[date time] Name: text`), oldest first, as the prompts expect. */
 export function nativeTranscript(messages: NativeMessage[]) {
-  return messages
-    .map((m) => {
-      const who = m.fromMe ? "You" : m.senderName || m.senderPhone || "Them";
-      const media = m.media ? (m.media.kind === "document" ? `[document: ${m.media.fileName ?? ""}]` : mediaLabel[m.media.kind]) : "";
-      return `[${new Date(m.timestamp).toLocaleString()}] ${who}: ${[media, m.body].filter(Boolean).join(" ")}`;
-    })
-    .join("\n");
+  return messages.map(transcriptLine).join("\n");
 }
 
 const usable = (m: NativeMessage) => m.kind !== "unsupported" && (m.body || m.media);
@@ -371,15 +372,18 @@ export function NativeMessageMenu({
 
 // ── Suggested replies ──────────────────────────────────────────────────
 
-/** Asks the model for replies to the chat and shows them under `id`'s bubble (the one that was right-clicked). */
+/** Asks the model for replies to the message that was right-clicked, shown under its bubble. Context is the chat up to that message. */
 export function suggestRepliesFor(opts: { id: string; accountId: string; chatId: string; chatName: string; messages: NativeMessage[] }) {
-  const recent = opts.messages.filter(usable);
+  const at = opts.messages.findIndex((m) => m.id === opts.id);
+  const target = opts.messages[at];
+  const upto = (at >= 0 ? opts.messages.slice(0, at + 1) : opts.messages).filter(usable);
   const run = () => {
     useReplySuggest.getState().set(opts.id, { loading: true, regen: run });
-    void smartReplies(nativeTranscript(recent.slice(-30)), {
+    void smartReplies(nativeTranscript(upto.slice(-30)), {
       chatName: opts.chatName,
       isGroup: opts.chatId.endsWith("@g.us"),
       account: nativeAccountKey(opts.accountId),
+      focus: target && usable(target) ? transcriptLine(target) : undefined,
     })
       .then((items) => useReplySuggest.getState().set(opts.id, { items, regen: run }))
       .catch((e) => useReplySuggest.getState().set(opts.id, { error: errMsg(e), regen: run }));

@@ -294,10 +294,17 @@ Rules: reply with the rewritten message only — no preamble, quotes or explanat
   return complete(system, text, { maxTokens: Math.min(4000, Math.max(256, text.length * 3)), fast: true, account });
 }
 
-/** Three short reply suggestions for the current conversation (transcript from `transcript()`). Returns [] when the model output is unusable. */
-export async function smartReplies(text: string, opts: { chatName: string; isGroup: boolean; account?: string }): Promise<string[]> {
-  const system = `You suggest replies the user ("You" in the transcript) could send next in a ${opts.isGroup ? "WhatsApp group" : "WhatsApp chat"} named "${opts.chatName}".
-Return exactly 3 suggestions as a JSON array of strings and nothing else. Each suggestion: one complete message the user could send as-is, ≤ 25 words, in the same language and register the user writes in (or the other party, if the user hasn't written yet). Make them meaningfully different (e.g. agree / ask a follow-up / decline politely). Answer the latest incoming message; use facts from the transcript, never invent commitments, prices or dates. No numbering, no quotes around the array.`;
+/** Three short reply suggestions for the current conversation (transcript from `transcript()`). With `focus`, they reply to that specific message instead of the latest one. Returns [] when the model output is unusable. */
+export async function smartReplies(
+  text: string,
+  opts: { chatName: string; isGroup: boolean; account?: string; focus?: string },
+): Promise<string[]> {
+  const chat = `${opts.isGroup ? "WhatsApp group" : "WhatsApp chat"} named "${opts.chatName}"`;
+  const ask = opts.focus
+    ? `Every suggestion must directly answer one specific message from the transcript:\n"""${opts.focus}"""\nUse the rest of the transcript only as background.`
+    : "Answer the latest incoming message.";
+  const system = `You suggest replies the user ("You" in the transcript) could send next in a ${chat}.
+Return exactly 3 suggestions as a JSON array of strings and nothing else. Each suggestion: one complete message the user could send as-is, ≤ 25 words, in the same language and register the user writes in (or the other party, if the user hasn't written yet). Make them meaningfully different (e.g. agree / ask a follow-up / decline politely). ${ask} Use facts from the transcript, never invent commitments, prices or dates. No numbering, no quotes around the array.`;
   const raw = await complete(system, `Transcript (latest last):\n${text}`, { maxTokens: 400, fast: true, account: opts.account });
   const m = raw.match(/\[[\s\S]*\]/);
   try {

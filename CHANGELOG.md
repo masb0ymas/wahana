@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.1.6 — 2026-10-04
+
+### Added
+
+- Start a chat: a "New chat" button in the chat list (the Chats tab and every multi-account grid cell). Search your existing chats or type a phone number with its country code (no "+" needed) to open a brand-new chat.
+- "Suggest reply" in a message's right-click menu: the AI drafts three replies to the message you clicked, built from the chat's context; pick one to drop it into the composer.
+- A story mention now shows a card that opens the mentioned status in the status viewer, instead of only "📣 Mentioned you in a story".
+- Profile pictures in the "Read by" and "Delivered to" lists of message info.
+
+### Changed
+
+- AI goes through the official OpenAI SDK; the provider picker is gone and the base URL is optional (defaults to `api.openai.com/v1`).
+- "Read by" and "Delivered to" in message info collapse and expand.
+
+### Fixed
+
+- Reasoning models (gpt-5, o-series, deepseek-r1, GLM-5…) work again: they get thinking headroom and `max_completion_tokens`, and an empty answer is reported as an error instead of a blank reply.
+- "Reply privately" sends a real cross-chat quote and opens the same person's existing chat (privacy id or phone number) instead of creating a duplicate.
+- Message info receipts show the correct number (no stray "+"), the phone under the name, and newest first.
+- Knowledge, quick replies and AI are scoped strictly per account; legacy global entries are migrated on launch.
+
 ## 1.1.5 — 2026-10-04
 
 ### Added

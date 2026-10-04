@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2 — 2026-10-04
+
+### Added
+
+- Community tab: groups are listed under their parent WhatsApp Community.
+- Private tab: show one-to-one chats only.
+- Reorder the chat filter tabs by dragging; the order is remembered.
+
+### Fixed
+
+- The macOS tray label no longer shows a stale count when nothing is unread.
+
 ## 1.1.1 — 2026-10-03
 
 ### Added

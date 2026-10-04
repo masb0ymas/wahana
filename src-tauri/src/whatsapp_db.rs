@@ -1037,6 +1037,7 @@ impl ChatDb {
                     from_me: r.get(3)?,
                     sender_name: r.get(4)?,
                     sender_phone: None,
+                    sender_id: None,
                     kind: kind_from(&r.get::<_, String>(5)?),
                     body: r.get(6)?,
                     timestamp: r.get(7)?,
@@ -1173,6 +1174,7 @@ impl ChatDb {
                     from_me: r.get(2)?,
                     sender_name: r.get(4)?,
                     sender_phone: None,
+                    sender_id: None,
                     kind: kind_from(&r.get::<_, String>(5)?),
                     body: r.get(6)?,
                     timestamp: r.get(7)?,
@@ -1215,6 +1217,7 @@ impl ChatDb {
                     view.sender_name = name.clone();
                 }
                 view.sender_phone = who.phone.clone();
+                view.sender_id = Some(sender_id);
             }
             messages.push(view);
         }
@@ -1245,8 +1248,20 @@ impl ChatDb {
         };
         // A story reply quotes a status, which is stored under `status@broadcast`. Rows
         // from before `quote_chat` was kept are matched by looking there too.
+        let source = quote
+            .chat
+            .as_deref()
+            .filter(|c| *c != STATUS_CHAT && *c != chat_id);
         let mut status = quote.chat.as_deref() == Some(STATUS_CHAT);
-        let mut stored = if status { None } else { find(chat_id)? };
+        // A cross-chat quote (reply privately) names the chat that stores the quoted message.
+        let mut stored = if status {
+            None
+        } else {
+            find(source.unwrap_or(chat_id))?
+        };
+        if stored.is_none() && source.is_some() {
+            stored = find(chat_id)?;
+        }
         if stored.is_none() && chat_id != STATUS_CHAT {
             stored = find(STATUS_CHAT)?;
             status |= stored.is_some();
@@ -1279,6 +1294,7 @@ impl ChatDb {
             sender_name,
             text,
             status,
+            chat: source.map(str::to_string),
         })
     }
 

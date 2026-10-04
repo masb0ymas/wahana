@@ -43,6 +43,7 @@ import {
   type NativeGroupMember,
   type NativeLabel,
   type NativeMessage,
+  type NativeReply,
 } from "@/lib/nativeWa";
 import { TranslateDraftButton, WriteAssistButton } from "@/components/DraftAssist";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
@@ -124,6 +125,12 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000;
 /** Messages read from the local history per page. */
 const PAGE = 100;
 
+/**
+ * A reply that quotes a message from another chat, opened by "Reply privately": the message, the
+ * chat that stores it, and that chat's name for the composer's reply bar.
+ */
+type CrossReply = { message: NativeMessage; chatId: string; chatName: string };
+
 export function WhatsAppScreen({
   account,
   header,
@@ -140,7 +147,9 @@ export function WhatsAppScreen({
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
   const [chats, setChats] = useState<NativeChat[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<string | null>(null);
+  const [pendingReply, setPendingReply] = useState<CrossReply | null>(null);
+  /** A message id to scroll to once the chat opened by a cross-chat quote is mounted. */
+  const [pendingJump, setPendingJump] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // A chat id belongs to one account: switching accounts drops the selection.
@@ -203,12 +212,15 @@ export function WhatsAppScreen({
                 chatId={chatId}
                 chat={chat}
                 tick={tick}
-                onOpenChat={(ids, draft) => {
-                  setDraft(draft ?? null);
+                onOpenChat={(ids, reply, jump) => {
+                  setPendingReply(reply ?? null);
+                  setPendingJump(jump ?? null);
                   setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!);
                 }}
-                initialDraft={draft}
-                onDraftUsed={() => setDraft(null)}
+                initialReply={pendingReply}
+                onReplyUsed={() => setPendingReply(null)}
+                initialJump={pendingJump}
+                onJumpUsed={() => setPendingJump(null)}
                 onError={setError}
                 onBack={() => setChatId(null)}
                 compact
@@ -254,12 +266,15 @@ export function WhatsAppScreen({
           chatId={chatId}
           chat={chat}
           tick={tick}
-          onOpenChat={(ids, draft) => {
-            setDraft(draft ?? null);
+          onOpenChat={(ids, reply, jump) => {
+            setPendingReply(reply ?? null);
+            setPendingJump(jump ?? null);
             setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!);
           }}
-          initialDraft={draft}
-          onDraftUsed={() => setDraft(null)}
+          initialReply={pendingReply}
+          onReplyUsed={() => setPendingReply(null)}
+          initialJump={pendingJump}
+          onJumpUsed={() => setPendingJump(null)}
           onError={setError}
         />
       ) : (
@@ -865,8 +880,10 @@ function Conversation({
   chat,
   tick,
   onOpenChat,
-  initialDraft,
-  onDraftUsed,
+  initialReply,
+  onReplyUsed,
+  initialJump,
+  onJumpUsed,
   onError,
   onBack,
   compact,
@@ -876,11 +893,14 @@ function Conversation({
   chatId: string;
   chat: NativeChat | undefined;
   tick: number;
-  /** Open a direct chat: candidate chat ids, best first, optionally with a draft to start the composer with. */
-  onOpenChat: (ids: string[], draft?: string) => void;
-  /** Text waiting for this chat's composer (a private reply), taken once. */
-  initialDraft: string | null;
-  onDraftUsed: () => void;
+  /** Open a direct chat: candidate chat ids, best first, optionally quoting a message and/or scrolling to one. */
+  onOpenChat: (ids: string[], reply?: CrossReply, jump?: string) => void;
+  /** A cross-chat reply (reply privately) waiting for this chat's composer, taken once. */
+  initialReply: CrossReply | null;
+  onReplyUsed: () => void;
+  /** A message id to scroll to once this chat is mounted (opening a cross-chat quote), taken once. */
+  initialJump: string | null;
+  onJumpUsed: () => void;
   onError: (e: string) => void;
   /** Shown as a back button (top-left) when the conversation is embedded in a tile. */
   onBack?: () => void;
@@ -912,6 +932,8 @@ function Conversation({
   const [summary, setSummary] = useState(false);
   const [draftPick, setDraftPick] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<NativeMessage | null>(null);
+  /** Source chat of a cross-chat reply (reply privately); null when replying within this chat. */
+  const [replyContext, setReplyContext] = useState<{ chatId: string; chatName: string } | null>(null);
   const [editing, setEditing] = useState<NativeMessage | null>(null);
   const [forward, setForward] = useState<NativeMessage | null>(null);
   const pins = usePins((s) => s.items);
@@ -954,11 +976,6 @@ function Conversation({
       cancelled = true;
     };
   }, [group, connected, account.id, chatId]);
-  useEffect(() => {
-    if (initialDraft == null) return;
-    setDraftPick(initialDraft);
-    onDraftUsed();
-  }, [initialDraft]); // eslint-disable-line react-hooks/exhaustive-deps
   const picture = usePicture(account.id, chatId, connected);
   const typists = Object.values(useNativeTyping(account.id, chatId, connected && !channel));
   const moreStored = messages.length >= limit;
@@ -1013,6 +1030,8 @@ function Conversation({
       el.scrollIntoView({ block: "center", behavior: "smooth" });
       setFlash(jumpTo);
       setJumpTo(null);
+    } else if (messages.length === 0) {
+      // The first page is still loading; decide once it arrives.
     } else if (moreStored) {
       atBottom.current = false;
       setLimit((l) => l + PAGE);
@@ -1034,11 +1053,29 @@ function Conversation({
   // A reply, an edit, or a forward does not survive a chat switch.
   useEffect(() => {
     setReplyTo(null);
+    setReplyContext(null);
     setEditing(null);
     setForward(null);
     setPinIdx(0);
     setJumpTo(null);
   }, [chatId]);
+
+  // "Reply privately" opens a new chat quoting the source message. Declared after the reset above
+  // so it wins on the mount that opens the chat.
+  useEffect(() => {
+    if (initialReply == null) return;
+    setEditing(null);
+    setReplyTo(initialReply.message);
+    setReplyContext({ chatId: initialReply.chatId, chatName: initialReply.chatName });
+    onReplyUsed();
+  }, [initialReply]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Opening a cross-chat quote switches to its chat and scrolls to the message there.
+  useEffect(() => {
+    if (initialJump == null) return;
+    setJumpTo(initialJump);
+    onJumpUsed();
+  }, [initialJump]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteMessage = async (m: NativeMessage) => {
     const choice = await confirm({
@@ -1071,7 +1108,14 @@ function Conversation({
     }
   };
 
-  const senderChatIds = (m: NativeMessage) => (m.senderPhone ? [`${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net`] : null);
+  // The sender's direct chat may run on their privacy id (`@lid`) rather than their phone number,
+  // so offer both and let the caller open whichever chat already exists (mirrors `chatIdsFor`).
+  const senderChatIds = (m: NativeMessage) => {
+    const ids = [m.senderId, m.senderPhone ? `${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net` : null].filter(
+      (id): id is string => !!id,
+    );
+    return ids.length ? ids : null;
+  };
 
   /** Pin for `secs`, or unpin when `secs` is omitted. */
   const pinMessage = async (m: NativeMessage, secs?: number) => {
@@ -1284,7 +1328,11 @@ function Conversation({
                     avatarChatId={m.senderPhone ? `${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net` : null}
                     pinned={isPinned(pins, prefsKey, m.id)}
                     onMenu={onMenu}
-                    onJumpTo={setJumpTo}
+                    onJumpTo={(reply) => {
+                      // A cross-chat quote (reply privately) lives in another chat: switch to it and scroll there.
+                      if (reply.chat) onOpenChat([reply.chat], undefined, bareId(reply.id));
+                      else setJumpTo(bareId(reply.id));
+                    }}
                     onProfile={setProfileId}
                   />
                 </ErrorBoundary>
@@ -1312,8 +1360,12 @@ function Conversation({
             onPick={setDraftPick}
             onError={onError}
             replyTo={replyTo}
+            replyContext={replyContext}
             editing={editing}
-            onCancelReply={() => setReplyTo(null)}
+            onCancelReply={() => {
+              setReplyTo(null);
+              setReplyContext(null);
+            }}
             onCancelEdit={() => setEditing(null)}
             onSent={scrollToLatest}
             compact={compact}
@@ -1331,6 +1383,7 @@ function Conversation({
                 ? undefined
                 : () => {
                     setEditing(null);
+                    setReplyContext(null);
                     setReplyTo(menu.m);
                   }
             }
@@ -1344,6 +1397,7 @@ function Conversation({
               Date.now() - menu.m.timestamp < EDIT_WINDOW_MS
                 ? () => {
                     setReplyTo(null);
+                    setReplyContext(null);
                     setEditing(menu.m);
                   }
                 : undefined
@@ -1357,7 +1411,7 @@ function Conversation({
             onChat={group && !menu.m.fromMe && senderChatIds(menu.m) ? () => onOpenChat(senderChatIds(menu.m)!) : undefined}
             onReplyPrivately={
               group && !menu.m.fromMe && !menu.m.revokedAt && senderChatIds(menu.m)
-                ? () => onOpenChat(senderChatIds(menu.m)!, quoteForPrivateReply(menu.m))
+                ? () => onOpenChat(senderChatIds(menu.m)!, { message: menu.m, chatId, chatName: name })
                 : undefined
             }
             onPin={channel || menu.m.revokedAt ? undefined : (secs) => void pinMessage(menu.m, secs)}
@@ -1483,17 +1537,6 @@ function AutoTranslateButton({ prefsKey }: { prefsKey: string }) {
 }
 
 /** The sender's round profile photo, loaded on demand and shared with the chat list. */
-/** The draft a private reply starts with: the message being answered, quoted. */
-function quoteForPrivateReply(m: NativeMessage) {
-  const text = m.body || (m.media ? `[${m.media.kind}]` : "");
-  return text
-    ? `${text
-        .split("\n")
-        .map((l) => `> ${l}`)
-        .join("\n")}\n`
-    : "";
-}
-
 function BubbleAvatar({
   accountId,
   chatId,
@@ -1542,7 +1585,8 @@ const Bubble = memo(function Bubble({
   avatarChatId: string | null;
   pinned: boolean;
   onMenu: (m: NativeMessage, pos: { x: number; y: number }) => void;
-  onJumpTo: (bareId: string) => void;
+  /** Open the quoted message: jump within this chat, or switch to the chat that stores it. */
+  onJumpTo: (reply: NativeReply) => void;
   onProfile: (chatId: string) => void;
 }) {
   const mine = m.fromMe;
@@ -1634,7 +1678,7 @@ const Bubble = memo(function Bubble({
           )}
           {m.replyTo && (
             <button
-              onClick={() => (m.replyTo!.status ? useStoryJump.getState().open(m.replyTo!.id) : onJumpTo(bareId(m.replyTo!.id)))}
+              onClick={() => (m.replyTo!.status ? useStoryJump.getState().open(m.replyTo!.id) : onJumpTo(m.replyTo!))}
               className={cn(
                 "mb-1 block w-full min-w-[140px] rounded-md border-l-4 border-wa-dark px-2 py-1 text-left text-xs",
                 mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",
@@ -1843,6 +1887,7 @@ function Composer({
   onPick,
   onError,
   replyTo,
+  replyContext,
   editing,
   onCancelReply,
   onCancelEdit,
@@ -1862,6 +1907,8 @@ function Composer({
   onError: (e: string) => void;
   /** The message being replied to, quoted when the text is sent. */
   replyTo: NativeMessage | null;
+  /** Source chat when `replyTo` lives in another chat (reply privately); null for a same-chat reply. */
+  replyContext: { chatId: string; chatName: string } | null;
   /** The message being edited; sending replaces its text instead of a new message. */
   editing: NativeMessage | null;
   onCancelReply: () => void;
@@ -2027,6 +2074,9 @@ function Composer({
     return () => document.removeEventListener("paste", onPaste);
   }, []);
 
+  // A cross-chat reply (reply privately) quotes the source chat, not this one.
+  const quoteChat = replyContext && replyContext.chatId !== chatId ? replyContext.chatId : null;
+
   const submit = async () => {
     const draft = text.trim();
     if ((!draft && !attachment) || sending || !connected) return;
@@ -2052,12 +2102,13 @@ function Composer({
           replyTo?.id ?? null,
           false,
           converted.mentions,
+          quoteChat,
         );
         void cacheSentMedia(account.id, sent, attachment.file);
         setAttachment(null);
         onCancelReply();
       } else {
-        await nativeWa.sendText(account.id, chatId, body, replyTo?.id ?? null, converted.mentions);
+        await nativeWa.sendText(account.id, chatId, body, replyTo?.id ?? null, converted.mentions, quoteChat);
         onCancelReply();
       }
       pickedMentions.current = [];
@@ -2121,7 +2172,10 @@ function Composer({
         <div className="flex items-start gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2 py-1.5 text-xs">
           <Reply size={14} className="mt-0.5 text-neutral-500" />
           <div className="min-w-0 flex-1">
-            <div className="font-medium text-wa-dark dark:text-wa">{replyTo.fromMe ? "You" : replyTo.senderName || "Them"}</div>
+            <div className="font-medium text-wa-dark dark:text-wa">
+              {replyTo.fromMe ? "You" : replyTo.senderName || "Them"}
+              {quoteChat && replyContext && <span className="font-normal text-neutral-500"> · {replyContext.chatName}</span>}
+            </div>
             <div className="truncate text-neutral-500">{stripWaMarkdown(replyTo.body) || "📎 Media"}</div>
           </div>
           <button onClick={onCancelReply} title="Cancel reply" className="p-1 text-neutral-500 hover:text-neutral-800">

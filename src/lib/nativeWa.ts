@@ -59,6 +59,8 @@ export interface NativeMessage {
   fromMe: boolean;
   senderName: string;
   senderPhone: string | null;
+  /** The sender's bare JID for a message from someone else (`…@lid` or `…@s.whatsapp.net`); null for our own. */
+  senderId: string | null;
   kind: "text" | "media" | "unsupported";
   /** The text, or a media message's caption. */
   body: string;
@@ -99,6 +101,8 @@ export interface NativeReply {
   text: string;
   /** A story (status); open it in the status viewer instead of jumping in the chat. */
   status: boolean;
+  /** The chat that stores this message when it is not the one being viewed (a cross-chat reply); null when same chat. */
+  chat: string | null;
 }
 
 /** When one recipient got, read and played a message of mine (unix ms; null = not seen). */
@@ -379,6 +383,7 @@ export const nativeWa = {
     quoteId?: string | null,
     asSticker = false,
     mentions?: string[],
+    quoteChat?: string | null,
   ) =>
     file.arrayBuffer().then((buf) =>
       invoke<NativeMessage>("wa_native_send_media", new Uint8Array(buf), {
@@ -389,6 +394,7 @@ export const nativeWa = {
           "x-name": encodeURIComponent(name),
           "x-caption": encodeURIComponent(caption),
           "x-quote": encodeURIComponent(quoteId ?? ""),
+          "x-quote-chat": encodeURIComponent(quoteChat ?? ""),
           "x-kind": asSticker ? "sticker" : "",
           ...(mentions?.length ? { "x-mentions": encodeURIComponent(mentions.join(",")) } : {}),
         },

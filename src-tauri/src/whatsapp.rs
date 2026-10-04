@@ -107,6 +107,10 @@ pub struct MessageView {
     pub from_me: bool,
     pub sender_name: String,
     pub sender_phone: Option<String>,
+    /// The sender's bare JID (`…@lid` or `…@s.whatsapp.net`) for a message from someone else.
+    /// The same person's direct chat may run on their privacy id, so the UI needs the real id to
+    /// open an existing chat instead of creating a second one under their phone number.
+    pub sender_id: Option<String>,
     pub kind: MessageKind,
     /// The text, or a media message's caption.
     pub body: String,
@@ -153,6 +157,9 @@ pub struct ReplyView {
     pub text: String,
     /// It is a story (status), so opening it means the status viewer, not this chat.
     pub status: bool,
+    /// The chat that stores the quoted message when it is not this one (a cross-chat reply such as
+    /// "reply privately"); `None` when it lives in the same chat. Opening the quote goes there.
+    pub chat: Option<String>,
 }
 
 /// How many times one emoji was used on a channel message.
@@ -975,6 +982,7 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
             from_me,
             sender_name: info.push_name.clone().unwrap_or_default(),
             sender_phone: None,
+            sender_id: None,
             kind,
             body,
             timestamp: info.message_timestamp.unwrap_or_default() as i64 * 1000,
@@ -1596,6 +1604,7 @@ async fn run_account(
                     from_me,
                     sender_name: ctx.info.push_name.clone(),
                     sender_phone: None,
+                    sender_id: None,
                     kind,
                     body,
                     timestamp: ctx.info.timestamp.timestamp_millis(),
@@ -1983,6 +1992,7 @@ pub async fn wa_native_send_text(
             from_me: true,
             sender_name,
             sender_phone: None,
+            sender_id: None,
             kind: MessageKind::Text,
             body: text,
             timestamp: now_millis(),
@@ -2273,6 +2283,7 @@ pub async fn wa_native_forward(
         from_me: true,
         sender_name,
         sender_phone: None,
+        sender_id: None,
         kind: if media.is_some() {
             MessageKind::Media
         } else {
@@ -2479,6 +2490,7 @@ pub async fn wa_native_channel_sync(
                         from_me: m.is_sender,
                         sender_name: String::new(),
                         sender_phone: None,
+                        sender_id: None,
                         kind,
                         body,
                         timestamp: m.timestamp as i64 * 1000,
@@ -3085,6 +3097,7 @@ pub async fn wa_native_send_media(
     let file_name = header("x-name").filter(|n| !n.is_empty());
     let caption = header("x-caption").filter(|c| !c.trim().is_empty());
     let quote_id = header("x-quote").filter(|q| !q.is_empty());
+    let quote_chat = header("x-quote-chat").filter(|q| !q.is_empty());
     let as_sticker = header("x-kind").as_deref() == Some("sticker");
     let mentions: Vec<String> = header("x-mentions")
         .map(|value| {
@@ -3132,7 +3145,12 @@ pub async fn wa_native_send_media(
     };
     let context_info = {
         let mut context = match &quote_id {
-            Some(qid) => quote_context(&account, &chat_id, &to, qid)?,
+            Some(qid) => quote_context(
+                &account,
+                quote_chat.as_deref().unwrap_or(&chat_id),
+                &to,
+                qid,
+            )?,
             None => wa::ContextInfo::default(),
         };
         if !mentions.is_empty() {
@@ -3220,6 +3238,7 @@ pub async fn wa_native_send_media(
             from_me: true,
             sender_name,
             sender_phone: None,
+            sender_id: None,
             kind: MessageKind::Media,
             body,
             timestamp: now_millis(),
@@ -3235,7 +3254,15 @@ pub async fn wa_native_send_media(
         },
         sender_id: String::new(),
         media,
-        quote: quote_id.as_deref().map(QuoteRef::by_id),
+        quote: quote_id.map(|qid| match quote_chat {
+            Some(chat) => QuoteRef {
+                id: qid,
+                sender: String::new(),
+                text: String::new(),
+                chat: Some(chat),
+            },
+            None => QuoteRef::by_id(&qid),
+        }),
         album: None,
     };
     let mut view = message.view.clone();

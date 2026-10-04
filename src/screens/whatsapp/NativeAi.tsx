@@ -37,6 +37,7 @@ import { nativeWa, type NativeMessage } from "@/lib/nativeWa";
 import { cn, errMsg } from "@/lib/utils";
 import { WaMarkdown } from "@/lib/waMarkdown";
 import { useImageNotes, type ImageNoteKind } from "@/store/imageNotes";
+import { useReplySuggest } from "@/store/replySuggest";
 import { bareId, useReactions } from "@/store/reactions";
 import { nativeAccountKey } from "@/lib/account";
 import { PIN_DURATIONS } from "@/store/pins";
@@ -137,6 +138,7 @@ export function NativeMessageMenu({
   onDeleteLocal,
   onChat,
   onReplyPrivately,
+  onSuggestReply,
   onPin,
   onForward,
   onInfo,
@@ -156,6 +158,8 @@ export function NativeMessageMenu({
   onChat?: () => void;
   /** Group: reply to the sender in a direct chat. */
   onReplyPrivately?: () => void;
+  /** Suggest replies for this chat, shown under the bubble. */
+  onSuggestReply?: () => void;
   /** Pin for `secs`, or unpin when called without it. */
   onPin?: (secs?: number) => void;
   onForward?: () => void;
@@ -264,6 +268,7 @@ export function NativeMessageMenu({
       {onInfo && item(<Info size={14} />, "Info", onInfo)}
       {onReply && item(<Reply size={14} />, "Reply", onReply)}
       {onReplyPrivately && item(<Reply size={14} />, "Reply privately", onReplyPrivately)}
+      {onSuggestReply && item(<Sparkles size={14} />, "Suggest reply", onSuggestReply, !ready)}
       {onChat && item(<MessageCircle size={14} />, "Chat", onChat)}
       {onPin &&
         (pinned ? (
@@ -365,6 +370,22 @@ export function NativeMessageMenu({
 }
 
 // ── Suggested replies ──────────────────────────────────────────────────
+
+/** Asks the model for replies to the chat and shows them under `id`'s bubble (the one that was right-clicked). */
+export function suggestRepliesFor(opts: { id: string; accountId: string; chatId: string; chatName: string; messages: NativeMessage[] }) {
+  const recent = opts.messages.filter(usable);
+  const run = () => {
+    useReplySuggest.getState().set(opts.id, { loading: true, regen: run });
+    void smartReplies(nativeTranscript(recent.slice(-30)), {
+      chatName: opts.chatName,
+      isGroup: opts.chatId.endsWith("@g.us"),
+      account: nativeAccountKey(opts.accountId),
+    })
+      .then((items) => useReplySuggest.getState().set(opts.id, { items, regen: run }))
+      .catch((e) => useReplySuggest.getState().set(opts.id, { error: errMsg(e), regen: run }));
+  };
+  run();
+}
 
 /** "Suggest replies" chip above the composer, shown when the last message is theirs. */
 export function NativeSmartReplies({

@@ -49,9 +49,15 @@ import { TranslateDraftButton, WriteAssistButton } from "@/components/DraftAssis
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { MentionPicker } from "@/components/MentionPicker";
 import { LinkPreviewCard } from "@/components/LinkPreview";
-import { AckIcon, ImageNoteView, TranslationView } from "@/components/MessageExtras";
+import { AckIcon, ImageNoteView, ReplySuggestView, TranslationView } from "@/components/MessageExtras";
 import { useStoryJump } from "@/store/storyJump";
-import { NativeMessageMenu, NativeSmartReplies, NativeSummaryModal, useNativeAutoTranslate } from "@/screens/whatsapp/NativeAi";
+import {
+  NativeMessageMenu,
+  NativeSmartReplies,
+  NativeSummaryModal,
+  suggestRepliesFor,
+  useNativeAutoTranslate,
+} from "@/screens/whatsapp/NativeAi";
 import { NativeMessageInfo } from "@/screens/whatsapp/NativeMessageInfo";
 import { NativeFollowChannel } from "@/screens/whatsapp/NativeChannel";
 import { NativeInfoPanel } from "@/screens/whatsapp/NativeInfoPanel";
@@ -1328,6 +1334,7 @@ function Conversation({
                     avatarChatId={m.senderPhone ? `${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net` : null}
                     pinned={isPinned(pins, prefsKey, m.id)}
                     onMenu={onMenu}
+                    onPickReply={setDraftPick}
                     onJumpTo={(reply) => {
                       // A cross-chat quote (reply privately) lives in another chat: switch to it and scroll there.
                       if (reply.chat) onOpenChat([reply.chat], undefined, bareId(reply.id));
@@ -1413,6 +1420,18 @@ function Conversation({
               group && !menu.m.fromMe && !menu.m.revokedAt && senderChatIds(menu.m)
                 ? () => onOpenChat(senderChatIds(menu.m)!, { message: menu.m, chatId, chatName: name })
                 : undefined
+            }
+            onSuggestReply={
+              channel && !canPost
+                ? undefined
+                : () =>
+                    suggestRepliesFor({
+                      id: menu.m.id,
+                      accountId: account.id,
+                      chatId,
+                      chatName: name,
+                      messages,
+                    })
             }
             onPin={channel || menu.m.revokedAt ? undefined : (secs) => void pinMessage(menu.m, secs)}
             onForward={menu.m.revokedAt ? undefined : () => setForward(menu.m)}
@@ -1579,6 +1598,7 @@ const Bubble = memo(function Bubble({
   avatarChatId,
   pinned,
   onMenu,
+  onPickReply,
   onJumpTo,
   onProfile,
 }: {
@@ -1593,6 +1613,8 @@ const Bubble = memo(function Bubble({
   avatarChatId: string | null;
   pinned: boolean;
   onMenu: (m: NativeMessage, pos: { x: number; y: number }) => void;
+  /** Put a suggested reply into the composer. */
+  onPickReply?: (text: string) => void;
   /** Open the quoted message: jump within this chat, or switch to the chat that stores it. */
   onJumpTo: (reply: NativeReply) => void;
   onProfile: (chatId: string) => void;
@@ -1774,6 +1796,7 @@ const Bubble = memo(function Bubble({
           )}
           <TranslationView id={m.id} />
           <ImageNoteView id={m.id} />
+          <ReplySuggestView id={m.id} onPick={onPickReply} />
           <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
             {m.editedAt != null &&
               (m.edits.length > 0 ? (

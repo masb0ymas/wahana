@@ -1,8 +1,9 @@
-import { Check, CheckCheck, Clock, Copy, Languages, Loader2 as Spinner, ScanText, Sparkles, X } from "lucide-react";
+import { Check, CheckCheck, Clock, Copy, Languages, Loader2 as Spinner, RefreshCw, ScanText, Sparkles, X } from "lucide-react";
 import { langName } from "@/lib/ai";
 import { cn } from "@/lib/utils";
 import { WaMarkdown, mdToWa } from "@/lib/waMarkdown";
 import { useImageNotes } from "@/store/imageNotes";
+import { useReplySuggest } from "@/store/replySuggest";
 import { useTranslations } from "@/store/translations";
 
 /** AI translation under a message bubble. */
@@ -56,6 +57,50 @@ export function ImageNoteView({ id }: { id: string }) {
       )}
       {n.error && <span className="text-red-600 selectable">{n.error}</span>}
       {text && <div className="whitespace-pre-wrap break-words selectable">{n.kind === "ocr" ? text : <WaMarkdown text={text} />}</div>}
+    </div>
+  );
+}
+
+/** AI reply suggestions under a bubble; picking one puts it in the composer. */
+export function ReplySuggestView({ id, onPick }: { id: string; onPick?: (text: string) => void }) {
+  const s = useReplySuggest((st) => st.byMsg[id]);
+  const clear = useReplySuggest((st) => st.clear);
+  if (!s) return null;
+  return (
+    <div className="mt-1 rounded-md border-l-2 border-amber-400 bg-amber-50/70 dark:bg-amber-900/20 px-2 py-1 text-xs">
+      <div className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300 mb-0.5">
+        <Sparkles size={10} /> Suggested replies
+        {s.regen && (
+          <button
+            className="ml-auto opacity-60 hover:opacity-100 disabled:opacity-40"
+            disabled={s.loading}
+            onClick={() => s.regen?.()}
+            title="Regenerate"
+          >
+            <RefreshCw size={10} className={cn(s.loading && "animate-spin")} />
+          </button>
+        )}
+        <button className={cn("opacity-60 hover:opacity-100", !s.regen && "ml-auto")} onClick={() => clear(id)} title="Hide">
+          <X size={10} />
+        </button>
+      </div>
+      {s.loading && (
+        <span className="flex items-center gap-1 opacity-70">
+          <Spinner size={10} className="animate-spin" /> thinking of replies…
+        </span>
+      )}
+      {s.error && <span className="text-red-600 selectable">{s.error}</span>}
+      {s.items?.map((t, i) => (
+        <button
+          key={i}
+          disabled={!onPick}
+          onClick={() => onPick?.(t)}
+          title="Insert into composer"
+          className="mt-0.5 block w-full rounded-md bg-white/70 dark:bg-neutral-700/50 px-2 py-1 text-left hover:bg-wa/15 disabled:opacity-60"
+        >
+          {t}
+        </button>
+      ))}
     </div>
   );
 }

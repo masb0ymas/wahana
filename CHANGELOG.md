@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.3 — 2026-10-04
+
+### Fixed
+
+- Linked accounts no longer ask for a new QR scan after an update. Opening the chat history with an older version stamped its schema version down, and the next newer version then failed to open the account and showed the welcome screen instead.
+- An account whose chat history fails to open at launch now stays in the account list instead of being dropped the next time the list is saved.
+- The welcome screen's "Link WhatsApp" card is centered again.
+
+### Changed
+
+- README (English and Chinese) lists @mentions, status reply and download, and the Private / Community filter tabs.
+- Dependabot opens a weekly PR when `whatsapp-rust` has a new release.
+
 ## 1.1.2 — 2026-10-04
 
 ### Added

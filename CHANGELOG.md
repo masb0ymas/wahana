@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.5 — 2026-10-04
+
+### Added
+
+- Multi-account grid (⌘7): several WhatsApp accounts side by side, each cell with its own chat list and conversation, at the number of columns and rows you choose (extra accounts scroll). Right-click a chat to pin, mute or label it; opening a chat shows it in the cell, with a back button to the list.
+- The account's own profile picture in the grid cells and on the Accounts screen.
+- Contributors shown in the README.
+
+### Changed
+
+- Each grid cell reuses the full chat screen, so search, filter tabs, pin/mute, labels, the right-click menu, read-all and select behave exactly like the Chats tab.
+- Per-account message, label and open-chat tracking: one account's activity no longer refreshes or suppresses notifications for the others.
+
+### Fixed
+
+- Opening a chat in a grid cell clears its unread badge, and blue ticks still follow the read-receipt setting (Tweaks).
+
 ## 1.1.4 — 2026-10-04
 
 ### Added

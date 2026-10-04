@@ -1,10 +1,22 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Smartphone, Settings as SettingsIcon, Loader2, Download, X, CircleDashed, Sparkles, Images } from "lucide-react";
+import {
+  MessageSquare,
+  Smartphone,
+  Settings as SettingsIcon,
+  Loader2,
+  Download,
+  X,
+  CircleDashed,
+  Sparkles,
+  Images,
+  LayoutGrid,
+} from "lucide-react";
 import { useSettings } from "@/store/settings";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { WelcomeScreen } from "@/screens/WelcomeScreen";
 import { AccountsScreen } from "@/screens/AccountsScreen";
 import { ChatScreen } from "@/screens/ChatScreen";
+import { GridScreen } from "@/screens/GridScreen";
 import { StatusScreen } from "@/screens/StatusScreen";
 import { FeaturesScreen } from "@/screens/FeaturesScreen";
 import { MediaScreen } from "@/screens/MediaScreen";
@@ -26,7 +38,7 @@ import { useReactions } from "@/store/reactions";
 import { useUpdater } from "@/realtime/useUpdater";
 import { Button } from "@/components/ui";
 
-type Tab = "chats" | "status" | "features" | "media" | "accounts" | "settings";
+type Tab = "chats" | "grid" | "status" | "features" | "media" | "accounts" | "settings";
 
 export default function App() {
   const { hydrated, hydrate } = useSettings();
@@ -79,6 +91,7 @@ export default function App() {
         "4": "accounts",
         "5": "settings",
         "6": "media",
+        "7": "grid",
       };
       if (tabs[e.key]) {
         e.preventDefault();
@@ -117,6 +130,7 @@ export default function App() {
 
   const nav: { id: Tab; icon: typeof MessageSquare; label: string }[] = [
     { id: "chats", icon: MessageSquare, label: "Chats (⌘1)" },
+    { id: "grid", icon: LayoutGrid, label: "Multi-account (⌘7)" },
     { id: "status", icon: CircleDashed, label: "Status (⌘2)" },
     { id: "features", icon: Sparkles, label: "Features: Scheduler, Broadcast, Auto-reply, Tweaks (⌘3)" },
     { id: "media", icon: Images, label: "Media saved on this computer (⌘6)" },
@@ -178,6 +192,7 @@ export default function App() {
               />
             )}
             {!welcome && tab === "chats" && <ChatScreen />}
+            {!welcome && tab === "grid" && <GridScreen />}
             {!welcome && tab === "status" && <StatusScreen />}
             {!welcome && tab === "features" && <FeaturesScreen />}
             {!welcome && tab === "media" && <MediaScreen />}

@@ -31,6 +31,10 @@ export interface Prefs {
   readReceipts: ReadReceipts;
   /** Order of the chat-list filter tabs, rearranged by dragging. */
   chatTabOrder: string[];
+  /** Columns in the multi-account grid view. */
+  gridColumns: number;
+  /** Rows of the multi-account grid view visible at once (extra accounts scroll). */
+  gridRows: number;
   // ── AI ──
   aiProvider: "anthropic" | "openai-compatible";
   aiBaseUrl: string;
@@ -83,6 +87,8 @@ const DEFAULT_PREFS: Prefs = {
   sendTyping: true,
   readReceipts: "always",
   chatTabOrder: ["all", "unread", "private", "groups", "community", "channels"],
+  gridColumns: 3,
+  gridRows: 2,
   aiProvider: "openai-compatible",
   aiBaseUrl: "",
   aiModel: "",

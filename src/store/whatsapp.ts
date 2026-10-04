@@ -58,8 +58,8 @@ interface State {
   qr: Record<string, NativeQr>;
   /** The chat on screen, so it does not raise a notification while you are reading it. */
   openChat: { account: string; chat: string } | null;
-  /** Bumped whenever chats or messages change, so screens know to re-read them. */
-  messageTick: number;
+  /** Per-account counter bumped when an account's chats or messages change, so that account's screen re-reads. */
+  messageTick: Record<string, number>;
   /** Bumped whenever an account's labels change (created, renamed, assigned). */
   labelsTick: number;
   hydrate: () => Promise<void>;
@@ -76,13 +76,16 @@ function upsert(list: NativeAccount[], account: NativeAccount) {
   return sortAccounts([...list.filter((a) => a.id !== account.id), account]);
 }
 
+/** Bump one account's message counter without touching the others. */
+const bumpTick = (m: Record<string, number>, id: string) => ({ ...m, [id]: (m[id] ?? 0) + 1 });
+
 export const useWhatsApp = create<State>((set, get) => ({
   accounts: [],
   hydrated: false,
   active: null,
   qr: {},
   openChat: null,
-  messageTick: 0,
+  messageTick: {},
   labelsTick: 0,
   async hydrate() {
     if (get().hydrated) return;
@@ -93,7 +96,7 @@ export const useWhatsApp = create<State>((set, get) => ({
       }),
     );
     await onNativeQr((qr) => set((st) => ({ qr: { ...st.qr, [qr.id]: qr } })));
-    await onNativeChats(() => set((st) => ({ messageTick: st.messageTick + 1 })));
+    await onNativeChats((id) => set((st) => ({ messageTick: bumpTick(st.messageTick, id) })));
     await onNativeLabels(() => set((st) => ({ labelsTick: st.labelsTick + 1 })));
     await onNativeReaction((r) =>
       useReactions.getState().apply({
@@ -116,7 +119,7 @@ export const useWhatsApp = create<State>((set, get) => ({
       }),
     );
     await onNativeMessages(({ id, messages }) => {
-      set((st) => ({ messageTick: st.messageTick + 1 }));
+      set((st) => ({ messageTick: bumpTick(st.messageTick, id) }));
       const { accounts, openChat } = get();
       const account = accounts.find((a) => a.id === id);
       for (const m of messages) {

@@ -2914,6 +2914,17 @@ pub async fn wa_native_watch_typing(
     Ok(())
 }
 
+/// One best-effort profile-picture lookup; errors (including 404/401) become `None`.
+async fn picture_lookup(client: &Client, jid: &Jid, preview: bool) -> Option<String> {
+    client
+        .contacts()
+        .get_profile_picture(jid, preview)
+        .await
+        .ok()
+        .flatten()
+        .map(|picture| picture.url)
+}
+
 /// Looks up a chat's profile picture (the small preview), once per chat per run.
 #[tauri::command]
 pub async fn wa_native_picture(
@@ -2942,12 +2953,41 @@ pub async fn wa_native_picture(
             .ok()
             .and_then(|meta| meta.picture_url)
     } else {
-        client
-            .contacts()
-            .get_profile_picture(&jid, true)
-            .await
-            .map_err(|e| e.to_string())?
-            .map(|picture| picture.url)
+        let snapshot = client.persistence_manager().get_device_snapshot();
+        let pn_match = snapshot.pn.as_ref().is_some_and(|pn| pn.user == jid.user);
+        let lid_match = snapshot
+            .lid
+            .as_ref()
+            .is_some_and(|lid| lid.user == jid.user);
+        if pn_match || lid_match {
+            // The account's own picture is served inconsistently: try preview, then the full
+            // image, then the other (LID/PN) form of the JID. Missing results are tolerated.
+            let alt = if pn_match {
+                snapshot.lid.clone()
+            } else {
+                snapshot.pn.clone()
+            };
+            let mut url = picture_lookup(&client, &jid, true).await;
+            if url.is_none() {
+                url = picture_lookup(&client, &jid, false).await;
+            }
+            if url.is_none() {
+                if let Some(alt) = alt.as_ref() {
+                    url = picture_lookup(&client, alt, true).await;
+                    if url.is_none() {
+                        url = picture_lookup(&client, alt, false).await;
+                    }
+                }
+            }
+            url
+        } else {
+            client
+                .contacts()
+                .get_profile_picture(&jid, true)
+                .await
+                .map_err(|e| e.to_string())?
+                .map(|picture| picture.url)
+        }
     };
     account
         .inner

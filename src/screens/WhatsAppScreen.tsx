@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   CheckCheck,
   BellOff,
+  ChevronLeft,
   Languages,
   Loader2,
   Paperclip,
@@ -96,17 +97,17 @@ function chatLabel(chat: NativeChat | undefined, chatId: string) {
   return { title: chat.phone, pushName: chat.name !== chat.phone ? chat.name : null };
 }
 
-type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels";
+export type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels";
 
 /** Every filter tab, in the default order. */
-const KNOWN_FILTERS: Filter[] = ["all", "unread", "private", "groups", "community", "channels"];
+export const KNOWN_FILTERS: Filter[] = ["all", "unread", "private", "groups", "community", "channels"];
 
 /**
  * Keeps a stored tab order usable: unknown ids are dropped and missing known filters are
  * inserted at their default position, so an order saved before a tab existed (or a custom
  * one) gains the new tabs without losing the user's arrangement.
  */
-function sanitizeTabOrder(order: string[]): Filter[] {
+export function sanitizeTabOrder(order: string[]): Filter[] {
   const known = [...new Set(order.filter((f): f is Filter => (KNOWN_FILTERS as string[]).includes(f)))];
   for (const f of KNOWN_FILTERS) {
     if (known.includes(f)) continue;
@@ -124,7 +125,7 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000;
 const PAGE = 100;
 
 export function WhatsAppScreen({ account, header }: { account: NativeAccount; header: React.ReactNode }) {
-  const tick = useWhatsApp((s) => s.messageTick);
+  const tick = useWhatsApp((s) => s.messageTick[account.id] ?? 0);
   const setOpenChat = useWhatsApp((s) => s.setOpenChat);
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
   const [chats, setChats] = useState<NativeChat[]>([]);
@@ -168,15 +169,6 @@ export function WhatsAppScreen({ account, header }: { account: NativeAccount; he
       }
     }
   }, [account.id, chats]);
-
-  // Whatever arrives in the chat on screen is read as it lands.
-  const openUnread = chats.find((c) => c.id === chatId)?.unread ?? 0;
-  useEffect(() => {
-    if (!chatId || openUnread === 0) return;
-    void nativeWa.markRead(account.id, chatId).catch((e) => setError(errMsg(e)));
-    // Blue ticks to the sender only when the account is set to receipt on open.
-    if (readReceiptsFor(nativeAccountKey(account.id)) === "always") void nativeWa.sendReceipt(account.id, chatId).catch(() => {});
-  }, [account.id, chatId, openUnread]);
 
   const chat = chats.find((c) => c.id === chatId);
 
@@ -801,7 +793,7 @@ const ChatRow = memo(function ChatRow({
 
 // ── Conversation ─────────────────────────────────────────────────────────
 
-function Conversation({
+export function Conversation({
   account,
   chatId,
   chat,
@@ -810,6 +802,8 @@ function Conversation({
   initialDraft,
   onDraftUsed,
   onError,
+  onBack,
+  compact,
 }: {
   account: NativeAccount;
   chatId: string;
@@ -821,6 +815,10 @@ function Conversation({
   initialDraft: string | null;
   onDraftUsed: () => void;
   onError: (e: string) => void;
+  /** Shown as a back button (top-left) when the conversation is embedded in a tile. */
+  onBack?: () => void;
+  /** Choose the compact composer layout (tools above the input). */
+  compact?: boolean;
 }) {
   const [info, setInfo] = useState(false);
   /** A group member whose profile was opened from a bubble; replaces the chat's own info panel. */
@@ -830,6 +828,16 @@ function Conversation({
   const name = pushName ?? title;
   const prefsKey = convKey(account.id, chatId);
   const autoTranslate = useChatPrefs((s) => s.autoTranslate[prefsKey]);
+
+  // Whatever arrives in the chat on screen is read as it lands. Lives here (not in the
+  // screen) so an open conversation is marked read wherever it is embedded, e.g. a grid tile.
+  const openUnread = chat?.unread ?? 0;
+  useEffect(() => {
+    if (openUnread === 0) return;
+    void nativeWa.markRead(account.id, chatId).catch((e) => onError(errMsg(e)));
+    // Blue ticks to the sender only when the account is set to receipt on open.
+    if (readReceiptsFor(nativeAccountKey(account.id)) === "always") void nativeWa.sendReceipt(account.id, chatId).catch(() => {});
+  }, [account.id, chatId, openUnread, onError]);
   const [infoFor, setInfoFor] = useState<NativeMessage | null>(null);
   const [menu, setMenu] = useState<{ m: NativeMessage; pos: { x: number; y: number } } | null>(null);
   const [summary, setSummary] = useState(false);
@@ -1054,6 +1062,15 @@ function Conversation({
     <>
       <div className="flex-1 min-w-0 flex flex-col bg-[#efeae2] dark:bg-neutral-950">
         <header className="h-14 shrink-0 flex items-center gap-3 px-4 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800">
+          {onBack && (
+            <button
+              onClick={onBack}
+              title="Back to chats"
+              className="shrink-0 -ml-1 p-1 rounded text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
           <button
             className="flex items-center gap-3 min-w-0 flex-1 text-left"
             onClick={() => {
@@ -1230,6 +1247,7 @@ function Conversation({
             onCancelReply={() => setReplyTo(null)}
             onCancelEdit={() => setEditing(null)}
             onSent={scrollToLatest}
+            compact={compact}
           />
         )}
         {menu && (
@@ -1759,6 +1777,7 @@ function Composer({
   onCancelReply,
   onCancelEdit,
   onSent,
+  compact,
 }: {
   account: NativeAccount;
   chatId: string;
@@ -1779,6 +1798,8 @@ function Composer({
   onCancelEdit: () => void;
   /** Pull the view to the newest message after sending one. */
   onSent: () => void;
+  /** Stack the tools above the input, for a narrow container (e.g. a grid tile). */
+  compact?: boolean;
 }) {
   // Unsent text is kept per chat, so switching away and back finds it again. Text loaded
   // for an edit is not a draft and is never saved.
@@ -2058,78 +2079,82 @@ function Composer({
           <Languages size={12} /> Your messages are translated to {langName(autoOut)} before sending
         </div>
       )}
-      <div className="flex items-end gap-1">
-        <input
-          ref={fileRef}
-          type="file"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) attach(f);
-            e.target.value = "";
-          }}
-        />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => fileRef.current?.click()}
-          disabled={!connected || !!editing}
-          title="Attach a file"
-        >
-          <Paperclip size={18} />
-        </Button>
-        <TranslateDraftButton text={text} onResult={setText} />
-        <WriteAssistButton text={text} onResult={setText} />
-        <StickerButton onPick={sendSticker} disabled={!connected || !!editing || sending} />
-        <EmojiButton
-          onPick={(emoji) => {
-            const ta = taRef.current;
-            const start = ta?.selectionStart ?? text.length;
-            const end = ta?.selectionEnd ?? text.length;
-            setText(text.slice(0, start) + emoji + text.slice(end));
-            requestAnimationFrame(() => {
-              if (!ta) return;
-              ta.focus();
-              ta.selectionStart = ta.selectionEnd = start + emoji.length;
-            });
-          }}
-        />
-        <textarea
-          ref={taRef}
-          value={text}
-          onChange={(e) => {
-            const v = e.target.value;
-            setText(v);
-            noteTyping();
-            const sl = v.match(/^\/(\S*)$/);
-            setSlash(sl ? sl[1]! : null);
-            syncMention(v, e.target.selectionStart ?? v.length);
-          }}
-          onKeyUp={(e) => {
-            if (e.key === "Enter" || e.key === "Tab" || e.key === "Escape") return;
-            syncMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
-          }}
-          onClick={(e) => syncMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void submit();
+      <div className={cn("flex gap-1", compact ? "flex-col" : "items-end")}>
+        <div className="flex items-center gap-1">
+          <input
+            ref={fileRef}
+            type="file"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) attach(f);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => fileRef.current?.click()}
+            disabled={!connected || !!editing}
+            title="Attach a file"
+          >
+            <Paperclip size={18} />
+          </Button>
+          <TranslateDraftButton text={text} onResult={setText} />
+          <WriteAssistButton text={text} onResult={setText} />
+          <StickerButton onPick={sendSticker} disabled={!connected || !!editing || sending} />
+          <EmojiButton
+            onPick={(emoji) => {
+              const ta = taRef.current;
+              const start = ta?.selectionStart ?? text.length;
+              const end = ta?.selectionEnd ?? text.length;
+              setText(text.slice(0, start) + emoji + text.slice(end));
+              requestAnimationFrame(() => {
+                if (!ta) return;
+                ta.focus();
+                ta.selectionStart = ta.selectionEnd = start + emoji.length;
+              });
+            }}
+          />
+        </div>
+        <div className="flex items-end gap-1 min-w-0 flex-1">
+          <textarea
+            ref={taRef}
+            value={text}
+            onChange={(e) => {
+              const v = e.target.value;
+              setText(v);
+              noteTyping();
+              const sl = v.match(/^\/(\S*)$/);
+              setSlash(sl ? sl[1]! : null);
+              syncMention(v, e.target.selectionStart ?? v.length);
+            }}
+            onKeyUp={(e) => {
+              if (e.key === "Enter" || e.key === "Tab" || e.key === "Escape") return;
+              syncMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
+            }}
+            onClick={(e) => syncMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+            rows={1}
+            disabled={!connected}
+            placeholder={
+              !connected
+                ? "Connect the account to send messages"
+                : attachment
+                  ? "Add a caption (optional)"
+                  : "Type a message (Enter to send, Shift+Enter for newline)"
             }
-          }}
-          rows={1}
-          disabled={!connected}
-          placeholder={
-            !connected
-              ? "Connect the account to send messages"
-              : attachment
-                ? "Add a caption (optional)"
-                : "Type a message (Enter to send, Shift+Enter for newline)"
-          }
-          className="flex-1 resize-none rounded-lg bg-neutral-100 dark:bg-neutral-800 px-3 py-2 text-sm outline-none max-h-40 disabled:opacity-60"
-        />
-        <Button onClick={submit} disabled={(!text.trim() && !attachment) || sending || !connected} title="Send">
-          {sending ? <Loader2 size={16} className="animate-spin" /> : autoOut ? <Languages size={16} /> : <Send size={16} />}
-        </Button>
+            className="flex-1 resize-none rounded-lg bg-neutral-100 dark:bg-neutral-800 px-3 py-2 text-sm outline-none max-h-40 disabled:opacity-60"
+          />
+          <Button onClick={submit} disabled={(!text.trim() && !attachment) || sending || !connected} title="Send">
+            {sending ? <Loader2 size={16} className="animate-spin" /> : autoOut ? <Languages size={16} /> : <Send size={16} />}
+          </Button>
+        </div>
       </div>
     </div>
   );

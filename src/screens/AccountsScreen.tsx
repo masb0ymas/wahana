@@ -4,6 +4,7 @@ import { LogOut, Pencil, Play, Plus, Square, Trash2, UserPen } from "lucide-reac
 import { useWhatsApp } from "@/store/whatsapp";
 import { nativeWa, type NativeAccount, type NativeWaStatus } from "@/lib/nativeWa";
 import { Pairing } from "@/screens/whatsapp/Pairing";
+import { usePicture } from "@/screens/whatsapp/usePicture";
 import { Avatar, Badge, Button, Input } from "@/components/ui";
 import { cn, errMsg } from "@/lib/utils";
 
@@ -68,6 +69,8 @@ function NativeAccountCard({
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(a.name);
+  // The account's own profile picture, looked up from its own JID.
+  const picture = usePicture(a.id, a.me?.id ?? "", a.status === "working" && !!a.me);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -90,7 +93,7 @@ function NativeAccountCard({
       )}
     >
       <div className="flex items-center gap-3">
-        <Avatar src={null} name={a.me?.pushName ?? a.name} size={40} />
+        <Avatar src={picture} name={a.me?.pushName ?? a.name} size={40} />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {editing ? (

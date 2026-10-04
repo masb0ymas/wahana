@@ -166,7 +166,8 @@ impl ChatDb {
         )?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if version < 2 {
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "ALTER TABLE messages ADD COLUMN media_kind TEXT;
                  ALTER TABLE messages ADD COLUMN mimetype TEXT;
                  ALTER TABLE messages ADD COLUMN file_name TEXT;
@@ -184,7 +185,8 @@ impl ChatDb {
             )?;
         }
         if version < 3 {
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "CREATE TABLE IF NOT EXISTS labels (
                      id TEXT PRIMARY KEY,
                      name TEXT NOT NULL,
@@ -202,7 +204,8 @@ impl ChatDb {
         }
         if version < 4 {
             // Messages stored before receipts were tracked count as sent.
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "ALTER TABLE messages ADD COLUMN ack INTEGER NOT NULL DEFAULT 1;
                  CREATE INDEX IF NOT EXISTS messages_by_id ON messages (id);",
             )?;
@@ -210,7 +213,8 @@ impl ChatDb {
         if version < 5 {
             // A message deleted for everyone keeps its content, marked with when it went;
             // an edited one keeps every earlier text in `message_edits`.
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "ALTER TABLE messages ADD COLUMN revoked_at INTEGER;
                  ALTER TABLE messages ADD COLUMN edited_at INTEGER;
                  CREATE TABLE IF NOT EXISTS message_edits (
@@ -225,7 +229,8 @@ impl ChatDb {
         if version < 6 {
             // When each recipient got, read or played a message of mine (one row per
             // recipient and level). Only receipts seen from now on are recorded.
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "CREATE TABLE IF NOT EXISTS receipts (
                      message_id TEXT NOT NULL,
                      recipient TEXT NOT NULL,
@@ -237,11 +242,12 @@ impl ChatDb {
         }
         if version < 7 {
             // A channel message is reacted to by the id the server gave it, not its message id.
-            conn.execute_batch("ALTER TABLE messages ADD COLUMN server_id INTEGER;")?;
+            migrate(&conn, "ALTER TABLE messages ADD COLUMN server_id INTEGER;")?;
         }
         if version < 8 {
             // Reaction totals on channel messages, as the server last reported them.
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "CREATE TABLE IF NOT EXISTS channel_reactions (
                      chat_id TEXT NOT NULL,
                      id TEXT NOT NULL,
@@ -252,19 +258,21 @@ impl ChatDb {
             )?;
         }
         if version < 9 {
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "ALTER TABLE messages ADD COLUMN quote_id TEXT;
                  ALTER TABLE messages ADD COLUMN quote_sender TEXT;
                  ALTER TABLE messages ADD COLUMN quote_text TEXT;",
             )?;
         }
         if version < 10 {
-            conn.execute_batch("ALTER TABLE messages ADD COLUMN album_id TEXT;")?;
+            migrate(&conn, "ALTER TABLE messages ADD COLUMN album_id TEXT;")?;
         }
         if version < 11 {
             // The link preview WhatsApp embedded in a message: the first URL plus the title,
             // description and a small JPEG thumbnail, all copied from the message proto.
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "ALTER TABLE messages ADD COLUMN preview_url TEXT;
                  ALTER TABLE messages ADD COLUMN preview_title TEXT;
                  ALTER TABLE messages ADD COLUMN preview_description TEXT;
@@ -273,22 +281,28 @@ impl ChatDb {
         }
         if version < 12 {
             // Chat mutes mirrored from the phone: `until` is epoch ms, -1 for good, 0 unmuted.
-            conn.execute_batch(
+            migrate(
+                &conn,
                 "CREATE TABLE IF NOT EXISTS mutes (id TEXT PRIMARY KEY, until INTEGER NOT NULL);",
             )?;
         }
         if version < 13 {
             // The chat a quote came from when it isn't this one: `status@broadcast` for a
             // reply or reaction to a story.
-            conn.execute_batch("ALTER TABLE messages ADD COLUMN quote_chat TEXT;")?;
+            migrate(&conn, "ALTER TABLE messages ADD COLUMN quote_chat TEXT;")?;
         }
         if version < 14 {
             // A community's subgroups (including its announcement group) by parent group.
-            conn.execute_batch(
+            migrate(&conn,
                 "CREATE TABLE IF NOT EXISTS communities (id TEXT PRIMARY KEY, parent TEXT NOT NULL);",
             )?;
         }
-        conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
+        // Never stamp a lower version: an older build sharing this file (a previous release,
+        // a dev build) would otherwise make the next newer one re-run migrations it already
+        // applied.
+        if version < SCHEMA_VERSION {
+            conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
+        }
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
         conn.execute("DELETE FROM chats WHERE id = 'status@broadcast'", [])?;
@@ -1521,6 +1535,20 @@ impl ChatDb {
     }
 }
 
+/// Runs one schema step statement by statement, skipping columns that are already there.
+/// `user_version` can lag the schema (an older build stamped it down, or a step was cut
+/// short), and a step that fails on a column it added before would lock the account out.
+fn migrate(conn: &Connection, sql: &str) -> rusqlite::Result<()> {
+    for stmt in sql.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+        match conn.execute_batch(stmt) {
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.starts_with("duplicate column name") => {}
+            other => other?,
+        }
+    }
+    Ok(())
+}
+
 /// A conversation timestamp this far past the local clock is the phone's corruption, not a
 /// real time (see `ChatDb::repair_implausible_chats`).
 const FUTURE_SLACK_MS: i64 = 24 * 60 * 60 * 1000;
@@ -1598,6 +1626,35 @@ mod tests {
         let path = std::env::temp_dir().join(format!("wahana-{name}-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         (ChatDb::open(&path).unwrap(), path)
+    }
+
+    #[test]
+    fn reopens_after_an_older_build_stamped_the_version_down() {
+        let (db, path) = temp_db("downgraded");
+        // What an older release does on open: its own, lower version over a newer schema.
+        db.conn.execute_batch("PRAGMA user_version = 10").unwrap();
+        drop(db);
+        let db = ChatDb::open(&path).unwrap();
+        let version: i64 = db
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        drop(db);
+
+        let db = ChatDb::open(&path).unwrap();
+        db.conn
+            .execute_batch(&format!("PRAGMA user_version = {}", SCHEMA_VERSION + 1))
+            .unwrap();
+        drop(db);
+        // A newer build's stamp is left alone.
+        let db = ChatDb::open(&path).unwrap();
+        let version: i64 = db
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION + 1);
+        let _ = std::fs::remove_file(&path);
     }
 
     fn add_message(db: &ChatDb, chat: &str, id: &str, body: &str, timestamp: i64) {

@@ -278,7 +278,7 @@ struct TypingPayload {
     state: &'static str,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct StoredAccount {
     id: String,
     name: String,
@@ -357,6 +357,9 @@ impl WaAccount {
 #[derive(Default)]
 pub struct WaState {
     accounts: Mutex<HashMap<String, Arc<WaAccount>>>,
+    /// Saved accounts whose chat history failed to open at launch. They are written back
+    /// with the list, so one bad start never erases a paired session from it.
+    unopened: Mutex<Vec<StoredAccount>>,
 }
 
 impl WaState {
@@ -409,12 +412,14 @@ fn save_accounts(
     app: &AppHandle,
     accounts: &HashMap<String, Arc<WaAccount>>,
 ) -> Result<(), String> {
+    let unopened = app.state::<WaState>().unopened.lock().unwrap().clone();
     let list: Vec<StoredAccount> = accounts
         .values()
         .map(|a| StoredAccount {
             id: a.id.clone(),
             name: a.name.lock().unwrap().clone(),
         })
+        .chain(unopened)
         .collect();
     let json = serde_json::to_vec_pretty(&list).map_err(|e| e.to_string())?;
     let dir = whatsapp_dir(app)?;
@@ -443,10 +448,11 @@ pub fn restore(app: &AppHandle) {
     let state = app.state::<WaState>();
     let restored: Vec<Arc<WaAccount>> = {
         let mut accounts = state.accounts.lock().unwrap();
+        let mut unopened = state.unopened.lock().unwrap();
         list.into_iter()
             .filter(|a| valid_id(&a.id))
-            .filter_map(
-                |stored| match WaAccount::open(app, stored.id, stored.name) {
+            .filter_map(|stored| {
+                match WaAccount::open(app, stored.id.clone(), stored.name.clone()) {
                     Ok(account) => {
                         let account = Arc::new(account);
                         accounts.insert(account.id.clone(), account.clone());
@@ -454,10 +460,11 @@ pub fn restore(app: &AppHandle) {
                     }
                     Err(e) => {
                         eprintln!("{e}");
+                        unopened.push(stored);
                         None
                     }
-                },
-            )
+                }
+            })
             .collect()
     };
     for account in restored {

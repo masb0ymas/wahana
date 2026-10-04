@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { confirm } from "@/components/Confirm";
-import { LogOut, Pencil, Play, Plus, Square, Trash2, UserPen } from "lucide-react";
+import { Check, LogOut, Pencil, Play, Plus, Square, Trash2, UserPen, X } from "lucide-react";
 import { useWhatsApp } from "@/store/whatsapp";
 import { nativeWa, type NativeAccount, type NativeWaStatus } from "@/lib/nativeWa";
+import { ACCOUNT_COLORS, resolveStyle, useAccountStyle } from "@/store/accountStyle";
 import { Pairing } from "@/screens/whatsapp/Pairing";
 import { usePicture } from "@/screens/whatsapp/usePicture";
+import { EmojiButton } from "@/components/EmojiPicker";
 import { Avatar, Badge, Button, Input } from "@/components/ui";
 import { cn, errMsg } from "@/lib/utils";
 
@@ -71,6 +73,11 @@ function NativeAccountCard({
   const [name, setName] = useState(a.name);
   // The account's own profile picture, looked up from its own JID.
   const picture = usePicture(a.id, a.me?.id ?? "", a.status === "working" && !!a.me);
+  const styles = useAccountStyle((s) => s.styles);
+  const setColor = useAccountStyle((s) => s.setColor);
+  const setIcon = useAccountStyle((s) => s.setIcon);
+  const raw = styles[a.id];
+  const { color, icon } = resolveStyle(styles, a.id);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -93,7 +100,9 @@ function NativeAccountCard({
       )}
     >
       <div className="flex items-center gap-3">
-        <Avatar src={picture} name={a.me?.pushName ?? a.name} size={40} />
+        <span className="shrink-0 rounded-full" style={{ boxShadow: `0 0 0 2px ${color}` }}>
+          <Avatar src={picture} name={a.me?.pushName ?? a.name} size={40} />
+        </span>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {editing ? (
@@ -132,7 +141,10 @@ function NativeAccountCard({
               </form>
             ) : (
               <>
-                <span className="font-semibold">{a.name}</span>
+                <span className="font-semibold">
+                  {icon ? `${icon} ` : ""}
+                  {a.name}
+                </span>
                 <button
                   type="button"
                   title="Rename"
@@ -186,6 +198,40 @@ function NativeAccountCard({
           >
             <Trash2 size={14} />
           </Button>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 flex-wrap text-xs">
+        <span className="text-neutral-500">Appearance</span>
+        <div className="flex items-center gap-1">
+          {ACCOUNT_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              title={c}
+              onClick={() => setColor(a.id, raw?.color === c ? null : c)}
+              style={{ backgroundColor: c }}
+              className={cn(
+                "w-4 h-4 rounded-full grid place-items-center",
+                color === c && "ring-2 ring-offset-1 ring-neutral-400 dark:ring-offset-neutral-900",
+              )}
+            >
+              {color === c && <Check size={10} className="text-white" />}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-neutral-500">Icon</span>
+          <EmojiButton onPick={(e) => setIcon(a.id, e)} />
+          {icon && (
+            <button
+              type="button"
+              title="Clear icon"
+              onClick={() => setIcon(a.id, null)}
+              className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+            >
+              <X size={12} />
+            </button>
+          )}
         </div>
       </div>
       {a.status === "qr" && <Pairing accountId={a.id} />}

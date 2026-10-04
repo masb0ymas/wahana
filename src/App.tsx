@@ -25,7 +25,8 @@ import { useBroadcastRunner } from "@/realtime/useBroadcastRunner";
 import { pruneLogs } from "@/store/scheduler";
 import { useAutoLabel } from "@/realtime/useAutoLabel";
 import { useScheduler } from "@/realtime/useScheduler";
-import { totalWhatsAppUnread, useWhatsApp } from "@/store/whatsapp";
+import { useWhatsApp } from "@/store/whatsapp";
+import { resolveStyle, useAccountStyle } from "@/store/accountStyle";
 import { useAutoReply } from "@/realtime/useAutoReply";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConfirmHost } from "@/components/Confirm";
@@ -57,8 +58,12 @@ export default function App() {
   const hydrateDrafts = useDrafts((s) => s.hydrate);
   const hydrateChatPrefs = useChatPrefs((s) => s.hydrate);
   const hydrateWa = useWhatsApp((s) => s.hydrate);
-  const unread = totalWhatsAppUnread(waAccounts);
-  useBadge(unread);
+  const hydrateAccountStyles = useAccountStyle((s) => s.hydrate);
+  const styles = useAccountStyle((s) => s.styles);
+  const accountGroups = waAccounts.map((a) => ({ id: a.id, name: a.name, unread: a.unread, ...resolveStyle(styles, a.id) }));
+  const unreadGroups = accountGroups.filter((g) => g.unread > 0);
+  useBadge(accountGroups);
+  const chatsTitle = unreadGroups.length ? `Chats (⌘1) — ${unreadGroups.map((g) => `${g.name}: ${g.unread}`).join(" · ")}` : "Chats (⌘1)";
   const updater = useUpdater();
   useScheduler();
   useBroadcastRunner();
@@ -89,8 +94,9 @@ export default function App() {
     void hydratePins();
     void hydrateDrafts();
     void hydrateChatPrefs();
+    void hydrateAccountStyles();
     hydrateWa().catch(console.error);
-  }, [hydrate, hydrateReactions, hydrateRevoked, hydratePins, hydrateDrafts, hydrateChatPrefs, hydrateWa]);
+  }, [hydrate, hydrateReactions, hydrateRevoked, hydratePins, hydrateDrafts, hydrateChatPrefs, hydrateAccountStyles, hydrateWa]);
 
   useEffect(() => {
     if (hydrated && waHydrated && welcome === null) setWelcome(waAccounts.length === 0);
@@ -146,7 +152,7 @@ export default function App() {
   }
 
   const nav: { id: Tab; icon: typeof MessageSquare; label: string }[] = [
-    { id: "chats", icon: MessageSquare, label: "Chats (⌘1)" },
+    { id: "chats", icon: MessageSquare, label: chatsTitle },
     { id: "grid", icon: LayoutGrid, label: "Multi-account (⌘7)" },
     { id: "status", icon: CircleDashed, label: "Status (⌘2)" },
     { id: "features", icon: Sparkles, label: "Features: Scheduler, Broadcast, Auto-reply, Tweaks (⌘3)" },
@@ -173,9 +179,23 @@ export default function App() {
             )}
           >
             <n.icon size={22} />
-            {n.id === "chats" && unread > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-wa text-[10px] font-bold text-wa-teal grid place-items-center">
-                {unread > 99 ? "99+" : unread}
+            {n.id === "chats" && unreadGroups.length > 0 && (
+              <span className="absolute -top-1 -right-1 flex flex-row-reverse items-center gap-0.5">
+                {unreadGroups.slice(0, 3).map((g) => (
+                  <span
+                    key={g.id}
+                    title={`${g.name}: ${g.unread}`}
+                    style={{ backgroundColor: g.color }}
+                    className="min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold text-white grid place-items-center shadow"
+                  >
+                    {g.unread > 99 ? "99+" : g.unread}
+                  </span>
+                ))}
+                {unreadGroups.length > 3 && (
+                  <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-neutral-500 text-[10px] font-bold text-white grid place-items-center shadow">
+                    +{unreadGroups.length - 3}
+                  </span>
+                )}
               </span>
             )}
           </button>

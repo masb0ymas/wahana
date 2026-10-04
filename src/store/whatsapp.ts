@@ -21,6 +21,7 @@ import { useReactions } from "@/store/reactions";
 import { useRevoked } from "@/store/revoked";
 import { notifyText } from "@/realtime/notify";
 import { useSettings } from "@/store/settings";
+import { useAccountStyle } from "@/store/accountStyle";
 
 /**
  * Native WhatsApp accounts (no server needed), driven by the Rust client. `active` is the
@@ -147,8 +148,9 @@ export const useWhatsApp = create<State>((set, get) => ({
         if (document.hasFocus() && openChats[id] === m.chatId) continue;
         if (isMutedUntil(useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)])) continue;
         const sender = m.senderName || `+${m.chatId.split("@")[0]}`;
-        const title = accounts.length > 1 && account ? `${sender} · ${account.name}` : sender;
-        void notifyText(title, m.body || (m.kind === "media" ? "📎 Media" : "New message"));
+        const accountName = accounts.length > 1 && account ? ` · ${account.name}` : "";
+        const icon = useAccountStyle.getState().styles[id]?.icon;
+        void notifyText(`${icon ? `${icon} ` : ""}${sender}${accountName}`, m.body || (m.kind === "media" ? "📎 Media" : "New message"));
       }
     });
     const accounts = sortAccounts(await nativeWa.accounts());
@@ -170,6 +172,7 @@ export const useWhatsApp = create<State>((set, get) => ({
   },
   async remove(id) {
     await nativeWa.remove(id);
+    useAccountStyle.getState().clear(id);
     set((st) => {
       const accounts = st.accounts.filter((a) => a.id !== id);
       const { [id]: _, ...qr } = st.qr;

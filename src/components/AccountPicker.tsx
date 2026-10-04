@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pencil } from "lucide-react";
 import { useWhatsApp } from "@/store/whatsapp";
+import { resolveStyle, useAccountStyle } from "@/store/accountStyle";
 
 const NEW = "\u0000new";
 
@@ -11,9 +12,11 @@ export function AccountPicker() {
   const setActive = useWhatsApp((s) => s.setActive);
   const add = useWhatsApp((s) => s.add);
   const rename = useWhatsApp((s) => s.rename);
+  const styles = useAccountStyle((s) => s.styles);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState("");
   const current = accounts.find((a) => a.id === active) ?? accounts[0];
+  const currentIcon = current ? resolveStyle(styles, current.id).icon : undefined;
 
   const commit = () => {
     setRenaming(false);
@@ -46,6 +49,11 @@ export function AccountPicker() {
       <span
         className={current?.status === "working" ? "w-2 h-2 rounded-full shrink-0 bg-wa" : "w-2 h-2 rounded-full shrink-0 bg-amber-400"}
       />
+      {currentIcon && (
+        <span className="shrink-0 text-sm leading-none" title="Account icon">
+          {currentIcon}
+        </span>
+      )}
       <select
         value={current?.id ?? ""}
         onChange={(e) => {
@@ -55,13 +63,17 @@ export function AccountPicker() {
         className="flex-1 bg-transparent outline-none cursor-pointer min-w-0 truncate"
         title="Active account"
       >
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-            {a.me?.pushName ? ` · ${a.me.pushName}` : ""}
-            {a.unread ? ` · ${a.unread} unread` : ""}
-          </option>
-        ))}
+        {accounts.map((a) => {
+          const icon = resolveStyle(styles, a.id).icon;
+          return (
+            <option key={a.id} value={a.id}>
+              {icon ? `${icon} ` : ""}
+              {a.name}
+              {a.me?.pushName ? ` · ${a.me.pushName}` : ""}
+              {a.unread ? ` · ${a.unread} unread` : ""}
+            </option>
+          );
+        })}
         <option value={NEW}>＋ Link a WhatsApp account…</option>
       </select>
       {current && (

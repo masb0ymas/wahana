@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui";
 import { openWelcome } from "@/screens/WelcomeScreen";
 import { useWhatsApp } from "@/store/whatsapp";
+import { useUpdaterStore } from "@/store/updater";
 
 export function AboutSection() {
   const native = useWhatsApp((s) => s.accounts);
@@ -12,6 +14,12 @@ export function AboutSection() {
       .then(setAppVersion)
       .catch(() => {});
   }, []);
+  const status = useUpdaterStore((s) => s.status);
+  const update = useUpdaterStore((s) => s.update);
+  const progress = useUpdaterStore((s) => s.progress);
+  const error = useUpdaterStore((s) => s.error);
+  const checkNow = useUpdaterStore((s) => s.checkNow);
+  const install = useUpdaterStore((s) => s.install);
   const linked = native.filter((a) => a.status === "working").length;
   const nativeText = native.length ? `${native.length} account${native.length === 1 ? "" : "s"} · ${linked} connected` : "No accounts";
   return (
@@ -22,6 +30,26 @@ export function AboutSection() {
         <dt className="text-neutral-500">Accounts</dt>
         <dd className="selectable">{nativeText}</dd>
       </dl>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={() => void checkNow()} disabled={status === "checking" || progress !== null}>
+          {status === "checking" ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          Check for updates
+        </Button>
+        {update && (
+          <Button size="sm" onClick={() => void install()} disabled={progress !== null}>
+            Install {update.version} &amp; restart
+          </Button>
+        )}
+      </div>
+      {(status !== "idle" || progress !== null) && (
+        <p className={"text-xs " + (status === "error" ? "text-red-600 selectable" : "text-neutral-500")}>
+          {status === "checking" && "Checking for updates…"}
+          {status === "latest" && `You're on the latest version (${appVersion}).`}
+          {status === "available" && update && `Wahana ${update.version} is available.`}
+          {status === "error" && error}
+          {progress !== null && ` Downloading… ${Math.round(progress * 100)}%`}
+        </p>
+      )}
       <p className="text-xs text-neutral-500">
         Unofficial client, not affiliated with WhatsApp or Meta. Unofficial clients may break WhatsApp's Terms of Service and can get your
         number banned; use at your own risk.

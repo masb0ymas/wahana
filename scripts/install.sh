@@ -46,6 +46,7 @@ fi
 
 # --- Rust -------------------------------------------------------------------
 # A previous rustup install may not be on PATH in this shell yet.
+# shellcheck source=/dev/null
 [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
 
 if command -v cargo >/dev/null && command -v rustc >/dev/null; then
@@ -59,6 +60,7 @@ if command -v cargo >/dev/null && command -v rustc >/dev/null; then
 else
   info "Rust not found, installing via rustup..."
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  # shellcheck source=/dev/null
   source "$HOME/.cargo/env"
   info "Installed $(rustc --version)"
 fi

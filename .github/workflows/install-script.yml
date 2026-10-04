@@ -1,0 +1,36 @@
+name: Install script
+
+on:
+  pull_request:
+    paths:
+      - scripts/install.sh
+      - scripts/test-install.sh
+      - .github/workflows/install-script.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/install.sh
+      - scripts/test-install.sh
+      - .github/workflows/install-script.yml
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: ShellCheck
+        run: shellcheck scripts/install.sh scripts/test-install.sh
+      - name: Syntax check
+        run: bash -n scripts/install.sh scripts/test-install.sh
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: ./scripts/test-install.sh

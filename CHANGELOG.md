@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.4 — 2026-10-04
+
+### Added
+
+- Media screen (⌘6): browse the media saved on this computer by session and type (images, videos, audio, documents) with file sizes, sorted by newest or largest. Delete single files, a selection, everything shown, or all media of a session from the right-click menu. Removed accounts that still have media keep their own "removed" session.
+
+### Changed
+
+- Each cached file now gets a `.meta` sidecar (account, chat, mimetype, file name, time) so it can be grouped; files cached earlier show as Unknown. Eviction removes the sidecar too.
+
 ## 1.1.3 — 2026-10-04
 
 ### Fixed

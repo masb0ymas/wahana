@@ -366,7 +366,7 @@ function NativeStoryViewer({
     setLoading(true);
     setErr(null);
     setBlob(null);
-    nativeMediaBlob(accountId, story.m)
+    nativeMediaBlob(accountId, story.m, true)
       .then((b) => {
         if (!alive) return;
         obj = URL.createObjectURL(b);

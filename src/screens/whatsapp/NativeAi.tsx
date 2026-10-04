@@ -110,7 +110,7 @@ export function analyzeMessageImage(accountId: string, m: NativeMessage, kind: I
   const notes = useImageNotes.getState();
   notes.set(m.id, { kind, loading: true });
   (async () => {
-    const blob = await nativeMediaBlob(accountId, m);
+    const blob = await nativeMediaBlob(accountId, m, true);
     const data = await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve((r.result as string).split(",")[1] ?? "");

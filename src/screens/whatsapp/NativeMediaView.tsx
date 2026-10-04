@@ -6,6 +6,7 @@ import { writeFile } from "@tauri-apps/plugin-fs";
 import { Lightbox } from "@/components/Lightbox";
 import { nativeAccountKey } from "@/lib/account";
 import { cacheGet, cachePut, formatBytes, mediaCacheKey, type CacheMeta } from "@/lib/mediaCache";
+import { queueMediaDownload } from "@/lib/mediaQueue";
 import { nativeWa, type NativeMessage } from "@/lib/nativeWa";
 import { cn, errMsg } from "@/lib/utils";
 import { shouldAutoLoad, useMediaPrefs } from "@/store/settings";
@@ -32,16 +33,25 @@ const cacheMeta = (accountId: string, m: NativeMessage): CacheMeta => ({
   sender: m.senderName,
 });
 
+/** Downloads already under way, so two views of the same attachment share one request. */
+const inflight = new Map<string, Promise<Blob>>();
+
 /** A message's attachment as a Blob: cache first, otherwise downloaded (and cached). */
-export async function nativeMediaBlob(accountId: string, m: NativeMessage): Promise<Blob> {
+export function nativeMediaBlob(accountId: string, m: NativeMessage, front = false): Promise<Blob> {
   const type = m.media?.mimetype ?? "application/octet-stream";
   const key = cacheKey(accountId, m);
-  const hit = await cacheGet(key);
-  if (hit) return new Blob([hit], { type });
-  const buf = await nativeWa.media(accountId, m.chatId, m.id);
-  const blob = new Blob([buf], { type });
-  void cachePut(key, blob, cacheMeta(accountId, m));
-  return blob;
+  const existing = inflight.get(key);
+  if (existing) return existing;
+  const p = (async () => {
+    const hit = await cacheGet(key);
+    if (hit) return new Blob([hit], { type });
+    const buf = await queueMediaDownload(() => nativeWa.media(accountId, m.chatId, m.id), front);
+    const blob = new Blob([buf], { type });
+    void cachePut(key, blob, cacheMeta(accountId, m));
+    return blob;
+  })().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
 }
 
 /** Put just-sent bytes in the cache, so your own attachment shows without a download. */
@@ -51,7 +61,7 @@ export const cacheSentMedia = (accountId: string, m: NativeMessage, blob: Blob) 
 /** Ask where to save a message's attachment, then write it there. */
 export async function saveNativeMedia(accountId: string, m: NativeMessage) {
   const media = m.media!;
-  const blob = await nativeMediaBlob(accountId, m);
+  const blob = await nativeMediaBlob(accountId, m, true);
   const ext = (media.mimetype.split("/")[1] ?? "bin").split(";")[0]!.replace("jpeg", "jpg");
   const path = await save({ defaultPath: media.fileName ?? `whatsapp-${m.id}.${ext}` });
   if (path) await writeFile(path, new Uint8Array(await blob.arrayBuffer()));
@@ -95,7 +105,7 @@ export function NativeMediaView({
       setLoading(true);
       setErr(null);
       try {
-        const blob = hit ? new Blob([hit], { type: media.mimetype }) : await nativeMediaBlob(accountId, m);
+        const blob = hit ? new Blob([hit], { type: media.mimetype }) : await nativeMediaBlob(accountId, m, wanted);
         if (cancelled) return;
         obj = URL.createObjectURL(blob);
         setUrl(obj);

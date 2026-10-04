@@ -620,7 +620,7 @@ function MediaGrid({ accountId, items }: { accountId: string; items: NativeMessa
     setBusy(m.id);
     setError(null);
     try {
-      const blob = await nativeMediaBlob(accountId, m);
+      const blob = await nativeMediaBlob(accountId, m, true);
       const mimetype = m.media!.mimetype;
       const kind = mimetype.startsWith("video/") ? "video" : "image";
       setOpen({

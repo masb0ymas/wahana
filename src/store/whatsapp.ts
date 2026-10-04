@@ -56,8 +56,9 @@ interface State {
   active: string | null;
   /** Latest pairing code per account, while it is waiting for a scan. */
   qr: Record<string, NativeQr>;
-  /** The chat on screen, so it does not raise a notification while you are reading it. */
-  openChat: { account: string; chat: string } | null;
+  /** The chat on screen per account (accountId → chatId), so an open chat does not raise a
+   * notification while you are reading it. Several can be open at once in the grid. */
+  openChats: Record<string, string>;
   /** Per-account counter bumped when an account's chats or messages change, so that account's screen re-reads. */
   messageTick: Record<string, number>;
   /** Bumped whenever an account's labels change (created, renamed, assigned). */
@@ -67,7 +68,7 @@ interface State {
   rename: (id: string, name: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
-  setOpenChat: (open: { account: string; chat: string } | null) => void;
+  setOpenChat: (accountId: string, chatId: string | null) => void;
 }
 
 const sortAccounts = (list: NativeAccount[]) => [...list].sort((a, b) => a.name.localeCompare(b.name));
@@ -84,7 +85,7 @@ export const useWhatsApp = create<State>((set, get) => ({
   hydrated: false,
   active: null,
   qr: {},
-  openChat: null,
+  openChats: {},
   messageTick: {},
   labelsTick: 0,
   async hydrate() {
@@ -120,7 +121,7 @@ export const useWhatsApp = create<State>((set, get) => ({
     );
     await onNativeMessages(({ id, messages }) => {
       set((st) => ({ messageTick: bumpTick(st.messageTick, id) }));
-      const { accounts, openChat } = get();
+      const { accounts, openChats } = get();
       const account = accounts.find((a) => a.id === id);
       for (const m of messages) {
         if (m.fromMe) continue;
@@ -143,7 +144,7 @@ export const useWhatsApp = create<State>((set, get) => ({
           }),
         );
         if (!useSettings.getState().notifications) continue;
-        if (document.hasFocus() && openChat?.account === id && openChat.chat === m.chatId) continue;
+        if (document.hasFocus() && openChats[id] === m.chatId) continue;
         if (isMutedUntil(useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)])) continue;
         const sender = m.senderName || `+${m.chatId.split("@")[0]}`;
         const title = accounts.length > 1 && account ? `${sender} · ${account.name}` : sender;
@@ -180,8 +181,13 @@ export const useWhatsApp = create<State>((set, get) => ({
     set({ active: id });
     void store().then((s) => s.set("active", id));
   },
-  setOpenChat(openChat) {
-    set({ openChat });
+  setOpenChat(accountId, chatId) {
+    set((st) => {
+      if (chatId) return { openChats: { ...st.openChats, [accountId]: chatId } };
+      if (!(accountId in st.openChats)) return st;
+      const { [accountId]: _, ...rest } = st.openChats;
+      return { openChats: rest };
+    });
   },
 }));
 

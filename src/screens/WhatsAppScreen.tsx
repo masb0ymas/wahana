@@ -97,17 +97,17 @@ function chatLabel(chat: NativeChat | undefined, chatId: string) {
   return { title: chat.phone, pushName: chat.name !== chat.phone ? chat.name : null };
 }
 
-export type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels";
+type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels";
 
 /** Every filter tab, in the default order. */
-export const KNOWN_FILTERS: Filter[] = ["all", "unread", "private", "groups", "community", "channels"];
+const KNOWN_FILTERS: Filter[] = ["all", "unread", "private", "groups", "community", "channels"];
 
 /**
  * Keeps a stored tab order usable: unknown ids are dropped and missing known filters are
  * inserted at their default position, so an order saved before a tab existed (or a custom
  * one) gains the new tabs without losing the user's arrangement.
  */
-export function sanitizeTabOrder(order: string[]): Filter[] {
+function sanitizeTabOrder(order: string[]): Filter[] {
   const known = [...new Set(order.filter((f): f is Filter => (KNOWN_FILTERS as string[]).includes(f)))];
   for (const f of KNOWN_FILTERS) {
     if (known.includes(f)) continue;
@@ -124,7 +124,17 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000;
 /** Messages read from the local history per page. */
 const PAGE = 100;
 
-export function WhatsAppScreen({ account, header }: { account: NativeAccount; header: React.ReactNode }) {
+export function WhatsAppScreen({
+  account,
+  header,
+  embedded,
+}: {
+  account: NativeAccount;
+  header: React.ReactNode;
+  /** One self-contained cell: the chat list and the conversation swap in place, with a back
+   * button, instead of the side-by-side panes with a resize handle. Used by the grid view. */
+  embedded?: boolean;
+}) {
   const tick = useWhatsApp((s) => s.messageTick[account.id] ?? 0);
   const setOpenChat = useWhatsApp((s) => s.setOpenChat);
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
@@ -140,8 +150,8 @@ export function WhatsAppScreen({ account, header }: { account: NativeAccount; he
   }, [account.id]);
 
   useEffect(() => {
-    setOpenChat(chatId ? { account: account.id, chat: chatId } : null);
-    return () => setOpenChat(null);
+    setOpenChat(account.id, chatId);
+    return () => setOpenChat(account.id, null);
   }, [account.id, chatId, setOpenChat]);
 
   useEffect(() => {
@@ -171,6 +181,46 @@ export function WhatsAppScreen({ account, header }: { account: NativeAccount; he
   }, [account.id, chats]);
 
   const chat = chats.find((c) => c.id === chatId);
+
+  if (embedded) {
+    return (
+      <div className="flex-1 min-h-0 flex flex-col">
+        {account.status === "qr" ? (
+          <Pairing accountId={account.id} />
+        ) : chatId ? (
+          <div className="flex-1 min-h-0 flex">
+            <Conversation
+              key={`${account.id}:${chatId}`}
+              account={account}
+              chatId={chatId}
+              chat={chat}
+              tick={tick}
+              onOpenChat={(ids, draft) => {
+                setDraft(draft ?? null);
+                setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!);
+              }}
+              initialDraft={draft}
+              onDraftUsed={() => setDraft(null)}
+              onError={setError}
+              onBack={() => setChatId(null)}
+              compact
+            />
+          </div>
+        ) : (
+          <ChatList
+            account={account}
+            header={null}
+            chats={chats}
+            selected={chatId}
+            onSelect={setChatId}
+            onDeleted={(ids) => ids.includes(chatId ?? "") && setChatId(null)}
+            error={error}
+            fill
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
@@ -228,6 +278,7 @@ function ChatList({
   onDeleted,
   error,
   width,
+  fill,
 }: {
   account: NativeAccount;
   header: React.ReactNode;
@@ -236,7 +287,9 @@ function ChatList({
   onSelect: (id: string) => void;
   onDeleted: (ids: string[]) => void;
   error: string | null;
-  width: number;
+  width?: number;
+  /** Fill the parent width instead of a fixed pane width (embedded in a grid cell). */
+  fill?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -417,8 +470,11 @@ function ChatList({
 
   return (
     <div
-      style={{ width }}
-      className="shrink-0 flex flex-col border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
+      style={fill ? undefined : { width }}
+      className={cn(
+        "flex flex-col bg-white dark:bg-neutral-900",
+        fill ? "flex-1 min-h-0 w-full" : "shrink-0 border-r border-neutral-200 dark:border-neutral-800",
+      )}
     >
       <div className="p-3 border-b border-neutral-200 dark:border-neutral-800 space-y-2">
         {header}
@@ -793,7 +849,7 @@ const ChatRow = memo(function ChatRow({
 
 // ── Conversation ─────────────────────────────────────────────────────────
 
-export function Conversation({
+function Conversation({
   account,
   chatId,
   chat,

@@ -61,8 +61,8 @@ interface State {
   openChats: Record<string, string>;
   /** Per-account counter bumped when an account's chats or messages change, so that account's screen re-reads. */
   messageTick: Record<string, number>;
-  /** Bumped whenever an account's labels change (created, renamed, assigned). */
-  labelsTick: number;
+  /** Per-account counter bumped when an account's labels change (created, renamed, assigned). */
+  labelsTick: Record<string, number>;
   hydrate: () => Promise<void>;
   add: (name?: string) => Promise<NativeAccount>;
   rename: (id: string, name: string) => Promise<void>;
@@ -87,7 +87,7 @@ export const useWhatsApp = create<State>((set, get) => ({
   qr: {},
   openChats: {},
   messageTick: {},
-  labelsTick: 0,
+  labelsTick: {},
   async hydrate() {
     if (get().hydrated) return;
     await onNativeAccount((account) =>
@@ -98,7 +98,7 @@ export const useWhatsApp = create<State>((set, get) => ({
     );
     await onNativeQr((qr) => set((st) => ({ qr: { ...st.qr, [qr.id]: qr } })));
     await onNativeChats((id) => set((st) => ({ messageTick: bumpTick(st.messageTick, id) })));
-    await onNativeLabels(() => set((st) => ({ labelsTick: st.labelsTick + 1 })));
+    await onNativeLabels((id) => set((st) => ({ labelsTick: bumpTick(st.labelsTick, id) })));
     await onNativeReaction((r) =>
       useReactions.getState().apply({
         id: r.messageId,

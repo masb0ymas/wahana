@@ -378,7 +378,7 @@ function ChatList({
   };
   const pinned = useChatPrefs((s) => s.pinned);
   const muted = useChatPrefs((s) => s.muted);
-  const labelsTick = useWhatsApp((s) => s.labelsTick);
+  const labelsTick = useWhatsApp((s) => s.labelsTick[account.id] ?? 0);
 
   useEffect(() => {
     const focus = () => searchRef.current?.focus();

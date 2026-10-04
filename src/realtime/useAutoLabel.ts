@@ -48,7 +48,7 @@ export function useAutoLabel() {
       const ids = labels.filter((l) => s.labels.includes(l.name)).map((l) => l.id);
       if (!ids.length) return;
       for (const labelId of ids) await nativeWa.labelLink(id, labelId, chatId, true);
-      useWhatsApp.setState((st) => ({ labelsTick: st.labelsTick + 1 }));
+      useWhatsApp.setState((st) => ({ labelsTick: { ...st.labelsTick, [id]: (st.labelsTick[id] ?? 0) + 1 } }));
     };
     window.addEventListener("wahana:incoming", onIncoming);
     return () => window.removeEventListener("wahana:incoming", onIncoming);

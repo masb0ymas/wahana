@@ -1,10 +1,11 @@
 //! On-disk cache for downloaded media so it is not fetched twice. Keys are hashed message
-//! ids; eviction is LRU-ish (by mtime) and runs lazily on a background thread.
+//! ids; eviction is LRU-ish (by mtime) and runs lazily on a background thread. Each entry
+//! may carry a `<file>.meta` JSON sidecar (account, chat, mimetype…) for the Media screen.
 
 use serde::Serialize;
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::SystemTime,
 };
@@ -50,13 +51,29 @@ pub struct CacheStats {
     path: String,
 }
 
+const META_EXT: &str = "meta";
+
+fn meta_path(path: &Path) -> PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(".");
+    s.push(META_EXT);
+    PathBuf::from(s)
+}
+
+/// Removes a cached file and its metadata sidecar.
+fn remove_entry(path: &Path) -> std::io::Result<()> {
+    let _ = fs::remove_file(meta_path(path));
+    fs::remove_file(path)
+}
+
+/// Media files only: sidecars are not counted as entries.
 fn scan(dir: &PathBuf) -> Vec<(PathBuf, u64, SystemTime)> {
     fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
                 .filter_map(|e| {
                     let md = e.metadata().ok()?;
-                    if !md.is_file() {
+                    if !md.is_file() || e.path().extension().is_some_and(|x| x == META_EXT) {
                         return None;
                     }
                     Some((
@@ -93,7 +110,8 @@ pub async fn media_cache_get(app: AppHandle, key: String) -> Result<Response, St
     Ok(Response::new(bytes))
 }
 
-/// Body is the raw file; `x-key` header names it, `x-limit` (bytes) caps the cache size.
+/// Body is the raw file; `x-key` header names it, `x-limit` (bytes) caps the cache size,
+/// and an optional `x-meta` (ASCII-escaped JSON) is kept beside it as a sidecar.
 #[tauri::command]
 pub fn media_cache_put(app: AppHandle, request: Request<'_>) -> Result<(), String> {
     let header = |name: &str| {
@@ -113,7 +131,11 @@ pub fn media_cache_put(app: AppHandle, request: Request<'_>) -> Result<(), Strin
     let written = bytes.len() as u64;
     // `Request<'_>` borrows, so this command must stay sync: keep the fast write here and
     // push the directory scan / eviction onto a background thread.
-    fs::write(dir.join(safe_key(&key)), &bytes).map_err(|e| e.to_string())?;
+    let path = dir.join(safe_key(&key));
+    fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    if let Some(meta) = header("x-meta") {
+        let _ = fs::write(meta_path(&path), meta);
+    }
     if limit > 0 {
         maybe_evict(dir, limit, written);
     }
@@ -146,7 +168,7 @@ fn maybe_evict(dir: PathBuf, limit: u64, written: u64) {
                 if total <= target {
                     break;
                 }
-                if fs::remove_file(&path).is_ok() {
+                if remove_entry(&path).is_ok() {
                     total -= size;
                 }
             }
@@ -164,6 +186,74 @@ pub async fn media_cache_stats(app: AppHandle) -> Result<CacheStats, String> {
         files: files.len() as u64,
         path: dir.to_string_lossy().into_owned(),
     })
+}
+
+#[derive(Serialize)]
+pub struct CacheEntry {
+    file: String,
+    bytes: u64,
+    /// When it was cached (unix ms); creation time where the OS reports one.
+    saved: u64,
+    meta: Option<serde_json::Value>,
+}
+
+fn unix_ms(t: SystemTime) -> u64 {
+    t.duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Every cached file with its size, time and metadata sidecar (when it was saved with one).
+#[tauri::command]
+pub async fn media_cache_list(app: AppHandle) -> Result<Vec<CacheEntry>, String> {
+    let dir = cache_dir(&app)?;
+    Ok(scan(&dir)
+        .into_iter()
+        .filter_map(|(path, bytes, modified)| {
+            let file = path.file_name()?.to_str()?.to_string();
+            let created = fs::metadata(&path).and_then(|m| m.created()).ok();
+            let meta = fs::read(meta_path(&path))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok());
+            Some(CacheEntry {
+                file,
+                bytes,
+                saved: unix_ms(created.unwrap_or(modified)),
+                meta,
+            })
+        })
+        .collect())
+}
+
+/// A listed file name, refused unless it is a plain name inside the cache directory.
+fn entry_path(dir: &Path, file: &str) -> Result<PathBuf, String> {
+    if file.is_empty()
+        || !file.chars().all(|c| c.is_ascii_alphanumeric() || c == '.')
+        || file.starts_with('.')
+    {
+        return Err("invalid file name".into());
+    }
+    Ok(dir.join(file))
+}
+
+/// The bytes of a listed file, by its file name (not its key).
+#[tauri::command]
+pub async fn media_cache_read(app: AppHandle, file: String) -> Result<Response, String> {
+    let path = entry_path(&cache_dir(&app)?, &file)?;
+    fs::read(path).map(Response::new).map_err(|e| e.to_string())
+}
+
+/// Deletes listed files (and their sidecars); returns how many were removed.
+#[tauri::command]
+pub async fn media_cache_delete(app: AppHandle, files: Vec<String>) -> Result<u32, String> {
+    let dir = cache_dir(&app)?;
+    let mut removed = 0;
+    for file in files {
+        if remove_entry(&entry_path(&dir, &file)?).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }
 
 #[tauri::command]

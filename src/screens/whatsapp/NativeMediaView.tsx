@@ -4,10 +4,11 @@ import { Download, FileText, Loader2, Maximize, Mic, Music, Play } from "lucide-
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { Lightbox } from "@/components/Lightbox";
-import { cacheGet, cachePut, formatBytes, mediaCacheKey } from "@/lib/mediaCache";
+import { cacheGet, cachePut, formatBytes, mediaCacheKey, type CacheMeta } from "@/lib/mediaCache";
 import { nativeWa, type NativeMessage } from "@/lib/nativeWa";
 import { cn, errMsg } from "@/lib/utils";
 import { shouldAutoLoad, useSettings } from "@/store/settings";
+import { useWhatsApp } from "@/store/whatsapp";
 
 /**
  * Attachments of native WhatsApp messages. Bytes are downloaded and decrypted by the
@@ -17,6 +18,19 @@ import { shouldAutoLoad, useSettings } from "@/store/settings";
 
 const cacheKey = (accountId: string, m: NativeMessage) => mediaCacheKey(`wa_${accountId}_${m.id}`, m.media?.mimetype ?? "");
 
+const cacheMeta = (accountId: string, m: NativeMessage): CacheMeta => ({
+  account: accountId,
+  accountName: useWhatsApp.getState().accounts.find((a) => a.id === accountId)?.name,
+  chatId: m.chatId,
+  messageId: m.id,
+  mimetype: m.media?.mimetype ?? "",
+  kind: m.media?.kind ?? "document",
+  fileName: m.media?.fileName ?? null,
+  timestamp: m.timestamp,
+  fromMe: m.fromMe,
+  sender: m.senderName,
+});
+
 /** A message's attachment as a Blob: cache first, otherwise downloaded (and cached). */
 export async function nativeMediaBlob(accountId: string, m: NativeMessage): Promise<Blob> {
   const type = m.media?.mimetype ?? "application/octet-stream";
@@ -25,12 +39,13 @@ export async function nativeMediaBlob(accountId: string, m: NativeMessage): Prom
   if (hit) return new Blob([hit], { type });
   const buf = await nativeWa.media(accountId, m.chatId, m.id);
   const blob = new Blob([buf], { type });
-  void cachePut(key, blob);
+  void cachePut(key, blob, cacheMeta(accountId, m));
   return blob;
 }
 
 /** Put just-sent bytes in the cache, so your own attachment shows without a download. */
-export const cacheSentMedia = (accountId: string, m: NativeMessage, blob: Blob) => cachePut(cacheKey(accountId, m), blob);
+export const cacheSentMedia = (accountId: string, m: NativeMessage, blob: Blob) =>
+  cachePut(cacheKey(accountId, m), blob, cacheMeta(accountId, m));
 
 /** Ask where to save a message's attachment, then write it there. */
 export async function saveNativeMedia(accountId: string, m: NativeMessage) {

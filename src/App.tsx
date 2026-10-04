@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Smartphone, Settings as SettingsIcon, Loader2, Download, X, CircleDashed, Sparkles } from "lucide-react";
+import { MessageSquare, Smartphone, Settings as SettingsIcon, Loader2, Download, X, CircleDashed, Sparkles, Images } from "lucide-react";
 import { useSettings } from "@/store/settings";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { WelcomeScreen } from "@/screens/WelcomeScreen";
@@ -7,6 +7,7 @@ import { AccountsScreen } from "@/screens/AccountsScreen";
 import { ChatScreen } from "@/screens/ChatScreen";
 import { StatusScreen } from "@/screens/StatusScreen";
 import { FeaturesScreen } from "@/screens/FeaturesScreen";
+import { MediaScreen } from "@/screens/MediaScreen";
 import { useBroadcastRunner } from "@/realtime/useBroadcastRunner";
 import { pruneLogs } from "@/store/scheduler";
 import { useAutoLabel } from "@/realtime/useAutoLabel";
@@ -25,7 +26,7 @@ import { useReactions } from "@/store/reactions";
 import { useUpdater } from "@/realtime/useUpdater";
 import { Button } from "@/components/ui";
 
-type Tab = "chats" | "status" | "features" | "accounts" | "settings";
+type Tab = "chats" | "status" | "features" | "media" | "accounts" | "settings";
 
 export default function App() {
   const { hydrated, hydrate } = useSettings();
@@ -66,7 +67,7 @@ export default function App() {
     if (hydrated && waHydrated && welcome === null) setWelcome(waAccounts.length === 0);
   }, [hydrated, waHydrated, welcome, waAccounts.length]);
 
-  // Global shortcuts: ⌘/Ctrl+1/2/3 switch tabs, ⌘/Ctrl+K focus chat search, ⌘/Ctrl+, opens settings.
+  // Global shortcuts: ⌘/Ctrl+1–6 switch tabs, ⌘/Ctrl+K focus chat search, ⌘/Ctrl+, opens settings.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -77,6 +78,7 @@ export default function App() {
         "3": "features",
         "4": "accounts",
         "5": "settings",
+        "6": "media",
       };
       if (tabs[e.key]) {
         e.preventDefault();
@@ -117,6 +119,7 @@ export default function App() {
     { id: "chats", icon: MessageSquare, label: "Chats (⌘1)" },
     { id: "status", icon: CircleDashed, label: "Status (⌘2)" },
     { id: "features", icon: Sparkles, label: "Features: Scheduler, Broadcast, Auto-reply, Tweaks (⌘3)" },
+    { id: "media", icon: Images, label: "Media saved on this computer (⌘6)" },
     { id: "accounts", icon: Smartphone, label: "Accounts (⌘4)" },
     { id: "settings", icon: SettingsIcon, label: "Settings (⌘5)" },
   ];
@@ -177,6 +180,7 @@ export default function App() {
             {!welcome && tab === "chats" && <ChatScreen />}
             {!welcome && tab === "status" && <StatusScreen />}
             {!welcome && tab === "features" && <FeaturesScreen />}
+            {!welcome && tab === "media" && <MediaScreen />}
             {!welcome && tab === "accounts" && <AccountsScreen />}
             {!welcome && tab === "settings" && <SettingsScreen />}
           </ErrorBoundary>

@@ -136,6 +136,10 @@ src-tauri/       Rust shell: keychain, media cache, tray, SQLite migrations
   whatsapp_db.rs per-account SQLite chat store: chats, messages, media keys, LID ↔ phone map, labels
 ```
 
+## Support
+
+Wahana is free and built in spare time, mostly with AI coding tools. If it saves you time, you can [buy me some AI tokens on Trakteer](https://trakteer.id/adamshafizullah/tip). It takes QRIS, Indonesian e-wallets and cards. Starring the repo or reporting a bug helps too.
+
 ## License
 
 [MIT](LICENSE) © Adam Suchi Hafizullah

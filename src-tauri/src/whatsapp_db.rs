@@ -299,7 +299,10 @@ impl ChatDb {
         }
         if version < 15 {
             // The status a story mention points at, so the bubble can open its story.
-            migrate(&conn, "ALTER TABLE messages ADD COLUMN status_mention_id TEXT;")?;
+            migrate(
+                &conn,
+                "ALTER TABLE messages ADD COLUMN status_mention_id TEXT;",
+            )?;
         }
         // Never stamp a lower version: an older build sharing this file (a previous release,
         // a dev build) would otherwise make the next newer one re-run migrations it already

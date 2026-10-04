@@ -32,6 +32,22 @@ Grab the latest `.dmg` (macOS, Apple Silicon or Intel) or `.msi` (Windows x64) f
 
 > macOS: the build is not notarized yet, so Gatekeeper may claim the app "is damaged and can't be opened". It isn't — after copying it to Applications, run `xattr -cr /Applications/Wahana.app` once in Terminal, then open it normally. Pick `aarch64` for Apple Silicon (M1–M4) and `x64` for Intel Macs.
 
+## Install from source
+
+macOS only. `scripts/install.sh` builds the app from a checkout (or clones it into `~/wahana`, override with `WAHANA_DIR`):
+
+```bash
+./scripts/install.sh
+```
+
+It installs Rust (via rustup) and the latest Node (via nvm) when missing, then runs `npm ci` and `npm run tauri build`. Standalone, without a checkout:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashafizullah/wahana/main/scripts/install.sh)"
+```
+
+Requires Xcode Command Line Tools (`xcode-select --install`). Artifacts land in `src-tauri/target/release/bundle/macos` and `src-tauri/target/release/bundle/dmg`.
+
 ## How it works
 
 Wahana is **only a client**. There is no Wahana backend, account, or cloud. It links your own WhatsApp account the same way WhatsApp Web does: you scan a QR code (or enter a pairing code) with your phone.

@@ -32,6 +32,22 @@
 
 > macOS：当前构建尚未公证，Gatekeeper 可能提示应用“已损坏，无法打开”。其实并没有损坏 —— 复制到“应用程序”后，在终端执行一次 `xattr -cr /Applications/Wahana.app`，然后正常打开即可。Apple Silicon（M1–M4）选择 `aarch64`，Intel Mac 选择 `x64`。
 
+## 从源码安装
+
+仅支持 macOS。`scripts/install.sh` 会从检出目录构建应用（没有检出时克隆到 `~/wahana`，可用 `WAHANA_DIR` 覆盖）：
+
+```bash
+./scripts/install.sh
+```
+
+缺少 Rust（通过 rustup）和最新版 Node（通过 nvm）时会自动安装，然后执行 `npm ci` 与 `npm run tauri build`。无需检出即可运行：
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashafizullah/wahana/main/scripts/install.sh)"
+```
+
+需要 Xcode Command Line Tools（`xcode-select --install`）。产物位于 `src-tauri/target/release/bundle/macos` 和 `src-tauri/target/release/bundle/dmg`。
+
 ## 工作原理
 
 Wahana **只是一个客户端**。没有 Wahana 后端、账号或云端。它连接你自己的 WhatsApp 账号，方式与 WhatsApp Web 相同：用手机扫描二维码（或输入配对码）。

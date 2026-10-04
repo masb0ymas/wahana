@@ -46,11 +46,11 @@ Optionally, for the AI features, your own API key for Anthropic or any OpenAI-co
 
 - Link accounts with QR / pairing-code login; several accounts in the same picker, each keeping its own session on disk (rename, disconnect, log out, remove)
 - Chat history: your phone sends it when an account is linked, it is kept in SQLite, and older messages of a chat are fetched from the phone as you scroll up; group, contact and channel names and profile pictures are filled in
-- WhatsApp formatting, emoji, quick replies (`/shortcut` with variables), link previews, quoted replies with media thumbnails
+- WhatsApp formatting, emoji, @mention group members, quick replies (`/shortcut` with variables), link previews, quoted replies with media thumbnails
 - Send and receive photos, videos, audio, voice notes, documents and stickers (sticker tray with saved and recent ones; any image converted to a 512×512 WebP), with media viewer and save; paste a screenshot to send it
 - Message menu: reactions, reply, forward, pin (24 hours / 7 days / 30 days, pins made on the phone show up too), edit, delete for everyone, delete for me, info, translate
 - Media auto-load per kind with blurred click-to-load previews, on-disk cache, lightbox with zoom and save
-- Read receipts and typing indicator (following the privacy settings), unread badges (list, tab, dock/tray), filters (unread / groups / channels)
+- Read receipts and typing indicator (following the privacy settings), unread badges (list, tab, dock/tray), filter tabs (unread / private / groups / communities / channels) you can reorder by dragging
 - Pin chats, mute for 8 hours / 1 week / always, drafts, labels (create, rename, delete, assign), all synced with your phone
 - In-chat search, jump to a pinned message, infinite history paging, export to `.txt` / `.html` / `.json`
 
@@ -62,7 +62,8 @@ Optionally, for the AI features, your own API key for Anthropic or any OpenAI-co
 
 **Status (stories)**
 
-- View contacts' updates (marked as viewed, auto-play, start from unseen, next contact), post text / photo / video, delete your own
+- View contacts' updates (marked as viewed, auto-play, start from unseen, next contact), reply to them, download their photos and videos
+- Post text / photo / video, delete your own
 
 **Automation**
 

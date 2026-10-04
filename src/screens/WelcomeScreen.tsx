@@ -20,11 +20,11 @@ export function WelcomeScreen({ onDone }: { onDone: (tab: "chats" | "settings") 
           <p className="text-sm text-neutral-500">A desktop client for your WhatsApp account. Link your phone to get started.</p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="max-w-sm mx-auto">
           <Card
             icon={Smartphone}
             title="Link WhatsApp"
-            body="No server needed. Scan the QR code with your phone to link this app as a device. Add more accounts later."
+            body="Scan the QR code with your phone to link this app as a device. Add more accounts later."
             action="Link an account"
             onClick={() => {
               void addWa("WhatsApp").catch(console.error);
@@ -62,13 +62,13 @@ function Card({
     <button
       onClick={onClick}
       className={cn(
-        "group text-left rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-3",
+        "group w-full text-left rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 space-y-3",
         "hover:border-wa-dark hover:shadow-md transition",
       )}
     >
       <Icon size={24} className="text-wa-dark" />
       <h2 className="font-semibold">{title}</h2>
-      <p className="text-sm text-neutral-500 min-h-[3.5rem]">{body}</p>
+      <p className="text-sm text-neutral-500">{body}</p>
       <span className="inline-flex items-center gap-1 text-sm font-medium text-wa-dark">
         {action} <ArrowRight size={14} className="transition group-hover:translate-x-0.5" />
       </span>

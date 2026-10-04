@@ -78,6 +78,8 @@ export interface NativeMessage {
   channelReactions: { emoji: string; count: number }[];
   /** The message this one replies to. */
   replyTo: NativeReply | null;
+  /** The status a story mention points at (its id under `status@broadcast`), or null. */
+  statusMention: string | null;
   /** Shared by the photos and videos that were sent together as one album. */
   albumId: string | null;
   /** The link preview WhatsApp embedded in the message, when it has one. */

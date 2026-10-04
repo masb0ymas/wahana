@@ -1698,6 +1698,22 @@ const Bubble = memo(function Bubble({
               <div className="line-clamp-2 break-words text-neutral-600 dark:text-neutral-300">{m.replyTo.text || "Message"}</div>
             </button>
           )}
+          {!revoked && m.statusMention && (
+            <button
+              onClick={() => useStoryJump.getState().open(m.statusMention!)}
+              title="Open story"
+              className={cn(
+                "mb-1 flex w-full min-w-[160px] items-center gap-2 rounded-md border-l-4 border-[#ff8a65] px-2 py-1.5 text-left text-xs",
+                mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",
+              )}
+            >
+              <span className="text-base leading-none">📣</span>
+              <span className="flex-1">
+                <span className="block font-medium text-wa-dark dark:text-wa">Mentioned you in a story</span>
+                <span className="block text-[10px] text-neutral-500 dark:text-neutral-400">Tap to view</span>
+              </span>
+            </button>
+          )}
           <div className={cn(revoked && "opacity-60")}>
             {album ? (
               album.length <= 4 ? (
@@ -1730,7 +1746,7 @@ const Bubble = memo(function Bubble({
               ) : null,
             )}
             {m.body && !m.media && !revoked && <LinkPreviewCard message={m} />}
-            {m.body && (
+            {m.body && !m.statusMention && (
               <div className={cn("break-words", revoked && "line-through decoration-neutral-400")}>
                 <div className={cn(!bodyOpen && longBody && "line-clamp-6")}>
                   <WaMarkdown text={m.body} mentions={group ? mentionFor : undefined} />

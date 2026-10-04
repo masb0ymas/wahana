@@ -17,7 +17,7 @@ use crate::whatsapp::{
 };
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 14;
+const SCHEMA_VERSION: i64 = 15;
 const STATUS_CHAT: &str = "status@broadcast";
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
@@ -297,6 +297,10 @@ impl ChatDb {
                 "CREATE TABLE IF NOT EXISTS communities (id TEXT PRIMARY KEY, parent TEXT NOT NULL);",
             )?;
         }
+        if version < 15 {
+            // The status a story mention points at, so the bubble can open its story.
+            migrate(&conn, "ALTER TABLE messages ADD COLUMN status_mention_id TEXT;")?;
+        }
         // Never stamp a lower version: an older build sharing this file (a previous release,
         // a dev build) would otherwise make the next newer one re-run migrations it already
         // applied.
@@ -492,8 +496,9 @@ impl ChatDb {
             "INSERT OR IGNORE INTO messages (chat_id, id, from_me, sender_id, sender_name, kind, body, timestamp,
                  media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto, ack,
                  quote_id, quote_sender, quote_text, album_id,
-                 preview_url, preview_title, preview_description, preview_image, quote_chat)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
+                 preview_url, preview_title, preview_description, preview_image, quote_chat,
+                 status_mention_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
             params![
                 v.chat_id,
                 v.id,
@@ -522,6 +527,7 @@ impl ChatDb {
                 v.preview.as_ref().and_then(|p| p.description.as_deref()),
                 v.preview.as_ref().and_then(|p| p.image.as_deref()),
                 msg.quote.as_ref().and_then(|q| q.chat.as_deref()),
+                v.status_mention.as_deref(),
             ],
         )? > 0;
         if !inserted {
@@ -567,6 +573,14 @@ impl ChatDb {
                         p.description.as_deref(),
                         p.image.as_deref(),
                     ],
+                )?;
+            }
+            // And the story a mention points at, for mentions stored before it was kept.
+            if let Some(id) = &v.status_mention {
+                self.conn.execute(
+                    "UPDATE messages SET status_mention_id = ?3
+                     WHERE chat_id = ?1 AND id = ?2 AND status_mention_id IS NULL",
+                    params![v.chat_id, v.id, id],
                 )?;
             }
             return Ok(false);
@@ -1048,6 +1062,7 @@ impl ChatDb {
                     edits: Vec::new(),
                     channel_reactions: Vec::new(),
                     reply_to: None,
+                    status_mention: None,
                     album_id: None,
                     preview: None,
                 },
@@ -1120,7 +1135,8 @@ impl ChatDb {
                  SELECT id, chat_id, from_me, sender_id, sender_name, kind, body, timestamp,
                         media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack,
                         revoked_at, edited_at, quote_id, quote_sender, quote_text, album_id,
-                        preview_url, preview_title, preview_description, preview_image, quote_chat
+                        preview_url, preview_title, preview_description, preview_image, quote_chat,
+                        status_mention_id
                  FROM messages
                  WHERE chat_id = ?1 {filter}
                  ORDER BY timestamp DESC
@@ -1185,6 +1201,7 @@ impl ChatDb {
                     edits: Vec::new(),
                     channel_reactions: Vec::new(),
                     reply_to: None,
+                    status_mention: r.get(28)?,
                     album_id: None,
                     preview,
                 },
@@ -1691,6 +1708,44 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap()
+    }
+
+    #[test]
+    fn story_mention_target_survives_a_round_trip() {
+        let (db, path) = temp_db("mention");
+        let message = IncomingMessage {
+            view: MessageView {
+                id: "m1".to_string(),
+                chat_id: "g@g.us".to_string(),
+                from_me: false,
+                sender_name: "A".to_string(),
+                sender_phone: None,
+                sender_id: None,
+                kind: MessageKind::Text,
+                body: "📣 Mentioned you in a story".to_string(),
+                timestamp: 1,
+                media: None,
+                ack: 0,
+                revoked_at: None,
+                edited_at: None,
+                edits: Vec::new(),
+                channel_reactions: Vec::new(),
+                reply_to: None,
+                status_mention: Some("status1".to_string()),
+                album_id: None,
+                preview: None,
+            },
+            sender_id: "a@c.us".to_string(),
+            media: None,
+            quote: None,
+            album: None,
+        };
+        db.insert_message(&message, false).unwrap();
+        let messages = db.messages("g@g.us", 10).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].status_mention.as_deref(), Some("status1"));
+        drop(db);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

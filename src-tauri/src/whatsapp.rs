@@ -128,6 +128,9 @@ pub struct MessageView {
     pub channel_reactions: Vec<ChannelReaction>,
     /// The message this one replies to.
     pub reply_to: Option<ReplyView>,
+    /// The status a story mention points at: the mention carries no story of its own, just
+    /// a reference, so the bubble opens the story viewer for this id.
+    pub status_mention: Option<String>,
     /// The album this photo or video was sent in, shared by all its members.
     pub album_id: Option<String>,
     /// The link preview WhatsApp embedded in the message, when it has one.
@@ -658,6 +661,15 @@ fn extract_media(message: &wa::Message) -> Option<StoredMedia> {
     Some(media)
 }
 
+/// What to show for a story mention whose story the sender did not include.
+fn story_mention_placeholder() -> (MessageKind, String, Option<StoredMedia>) {
+    (
+        MessageKind::Text,
+        "📣 Mentioned you in a story".to_string(),
+        None,
+    )
+}
+
 /// The text of a message plus its attachment, or `None` for protocol traffic (reactions,
 /// revokes, key distribution) that rides on the message channel but is not a message of
 /// its own.
@@ -670,8 +682,9 @@ fn message_content(message: &wa::Message) -> Option<(MessageKind, String, Option
     {
         return message_content(child);
     }
-    // A story mention wraps the story it mentions; show that, or a label when the story
-    // itself is not carried.
+    // A story mention carries no story of its own, just a reference to the status it names
+    // (see `status_mention_of`); show the inner content if a sending client ever includes
+    // it, else a label. The bubble opens the referenced story from `status_mention`.
     let mention = message
         .status_mention_message
         .as_option()
@@ -682,13 +695,7 @@ fn message_content(message: &wa::Message) -> Option<(MessageKind, String, Option
             .as_option()
             .and_then(message_content)
             .filter(|(kind, _, _)| !matches!(kind, MessageKind::Unsupported));
-        return Some(inner.unwrap_or_else(|| {
-            (
-                MessageKind::Text,
-                "📣 Mentioned you in a story".to_string(),
-                None,
-            )
-        }));
+        return Some(inner.unwrap_or_else(story_mention_placeholder));
     }
     if let Some(media) = extract_media(message) {
         let caption = message.get_caption().unwrap_or_default().to_string();
@@ -804,6 +811,28 @@ fn quote_of(message: &wa::Message) -> Option<QuoteRef> {
             .filter(|jid| *jid == "status@broadcast")
             .map(str::to_string),
     })
+}
+
+/// The status a story mention points at. The mention itself carries no story — only a
+/// `protocolMessage` of type `STATUS_MENTION_MESSAGE` keyed to the status in
+/// `status@broadcast`, whether it names you (1:1) or a group you are in. The referenced
+/// story is the one shown in the status viewer.
+fn status_mention_of(message: &wa::Message) -> Option<String> {
+    let inner = message
+        .status_mention_message
+        .as_option()
+        .or(message.group_status_mention_message.as_option())?
+        .message
+        .as_option()?;
+    let protocol = inner.protocol_message.as_option()?;
+    if protocol.r#type != Some(wa::message::protocol_message::Type::StatusMentionMessage) {
+        return None;
+    }
+    let key = protocol.key.as_option()?;
+    if key.remote_jid.as_deref() != Some("status@broadcast") {
+        return None;
+    }
+    key.id.clone().filter(|id| !id.is_empty())
 }
 
 /// Stores a live message, sent or received, and notifies the frontend.
@@ -993,6 +1022,7 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
             edits: Vec::new(),
             channel_reactions: Vec::new(),
             reply_to: None,
+            status_mention: info.message.as_option().and_then(status_mention_of),
             album_id: None,
             preview: info.message.as_option().and_then(link_preview),
         },
@@ -1615,6 +1645,7 @@ async fn run_account(
                     edits: Vec::new(),
                     channel_reactions: Vec::new(),
                     reply_to: None,
+                    status_mention: status_mention_of(&ctx.message),
                     album_id: None,
                     preview: link_preview(&ctx.message),
                 },
@@ -2003,6 +2034,7 @@ pub async fn wa_native_send_text(
             edits: Vec::new(),
             channel_reactions: Vec::new(),
             reply_to: None,
+            status_mention: None,
             album_id: None,
             preview: None,
         },
@@ -2298,6 +2330,7 @@ pub async fn wa_native_forward(
         edits: Vec::new(),
         channel_reactions: Vec::new(),
         reply_to: None,
+        status_mention: None,
         album_id: None,
         preview: link_preview(&message),
     };
@@ -2501,6 +2534,7 @@ pub async fn wa_native_channel_sync(
                         edits: Vec::new(),
                         channel_reactions: Vec::new(),
                         reply_to: None,
+                        status_mention: m.message.as_ref().and_then(status_mention_of),
                         album_id: None,
                         preview: m.message.as_ref().and_then(link_preview),
                     },
@@ -3254,6 +3288,7 @@ pub async fn wa_native_send_media(
             edits: Vec::new(),
             channel_reactions: Vec::new(),
             reply_to: None,
+            status_mention: None,
             album_id: None,
             preview: None,
         },

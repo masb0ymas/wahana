@@ -140,6 +140,10 @@ src-tauri/       Rust shell: keychain, media cache, tray, SQLite migrations
 
 Wahana is free and built in spare time, mostly with AI coding tools. If it saves you time, you can [buy me some AI tokens on Trakteer](https://trakteer.id/adamshafizullah/tip). It takes QRIS, Indonesian e-wallets and cards. Starring the repo or reporting a bug helps too.
 
+<a href="https://trakteer.id/adamshafizullah/tip"><img src="assets/support-qr.png" width="160" alt="QR code for trakteer.id/adamshafizullah/tip"></a>
+
+Scan with your phone camera; it opens `trakteer.id/adamshafizullah/tip`.
+
 ## License
 
 [MIT](LICENSE) © Adam Suchi Hafizullah

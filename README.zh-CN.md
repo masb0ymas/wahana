@@ -140,6 +140,10 @@ src-tauri/       Rust 外壳：钥匙串、媒体缓存、托盘、SQLite 迁移
 
 Wahana 免费，是利用业余时间、主要借助 AI 编程工具开发的。如果它帮你节省了时间，可以[在 Trakteer 上请我一些 AI token](https://trakteer.id/adamshafizullah/tip)，支持 QRIS、印尼电子钱包和银行卡。给仓库点个 Star 或反馈 bug 也同样是支持。
 
+<a href="https://trakteer.id/adamshafizullah/tip"><img src="assets/support-qr.png" width="160" alt="trakteer.id/adamshafizullah/tip 的二维码"></a>
+
+用手机相机扫描即可打开 `trakteer.id/adamshafizullah/tip`。
+
 ## 许可证
 
 [MIT](LICENSE) © Adam Suchi Hafizullah

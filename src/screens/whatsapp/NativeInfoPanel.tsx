@@ -58,6 +58,7 @@ export function NativeInfoPanel({
   picture,
   onOpenChat,
   onClose,
+  overlay,
 }: {
   accountId: string;
   chatId: string;
@@ -67,6 +68,8 @@ export function NativeInfoPanel({
   /** Open the direct chat with someone: candidate chat ids, best first. */
   onOpenChat: (ids: string[]) => void;
   onClose: () => void;
+  /** Cover the whole cell instead of sitting beside the conversation (grid tiles). */
+  overlay?: boolean;
 }) {
   const group = chatId.endsWith("@g.us");
   const channel = chatId.endsWith("@newsletter");
@@ -103,7 +106,12 @@ export function NativeInfoPanel({
   const amAdmin = details?.type === "group" && details.members.some((m) => m.isMe && m.admin);
 
   return (
-    <aside className="w-80 shrink-0 flex flex-col border-l border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+    <aside
+      className={cn(
+        "flex flex-col bg-white dark:bg-neutral-900",
+        overlay ? "absolute inset-0 z-10 w-full" : "w-80 shrink-0 border-l border-neutral-200 dark:border-neutral-800",
+      )}
+    >
       <div className="h-14 shrink-0 flex items-center gap-2 px-4 border-b border-neutral-200 dark:border-neutral-800">
         <span className="font-semibold flex-1">
           {view === "media" ? "Media, links & docs" : group ? "Group info" : channel ? "Channel info" : "Contact info"}

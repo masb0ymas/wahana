@@ -173,7 +173,9 @@ export const useWhatsApp = create<State>((set, get) => ({
     set((st) => {
       const accounts = st.accounts.filter((a) => a.id !== id);
       const { [id]: _, ...qr } = st.qr;
-      return { accounts, qr };
+      const openChats = { ...st.openChats };
+      delete openChats[id];
+      return { accounts, qr, openChats };
     });
     if (get().active === id) get().setActive(get().accounts[0]?.id ?? null);
   },

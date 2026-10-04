@@ -186,26 +186,36 @@ export function WhatsAppScreen({
     return (
       <div className="flex-1 min-h-0 flex flex-col">
         {account.status === "qr" ? (
-          <Pairing accountId={account.id} />
-        ) : chatId ? (
-          <div className="flex-1 min-h-0 flex">
-            <Conversation
-              key={`${account.id}:${chatId}`}
-              account={account}
-              chatId={chatId}
-              chat={chat}
-              tick={tick}
-              onOpenChat={(ids, draft) => {
-                setDraft(draft ?? null);
-                setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!);
-              }}
-              initialDraft={draft}
-              onDraftUsed={() => setDraft(null)}
-              onError={setError}
-              onBack={() => setChatId(null)}
-              compact
-            />
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <Pairing accountId={account.id} />
           </div>
+        ) : chatId ? (
+          <>
+            {(error || account.error) && (
+              <div className="shrink-0 px-3 py-1.5 text-[11px] bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 selectable">
+                {error || account.error}
+              </div>
+            )}
+            <div className="flex-1 min-h-0 flex relative">
+              <Conversation
+                key={`${account.id}:${chatId}`}
+                account={account}
+                chatId={chatId}
+                chat={chat}
+                tick={tick}
+                onOpenChat={(ids, draft) => {
+                  setDraft(draft ?? null);
+                  setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!);
+                }}
+                initialDraft={draft}
+                onDraftUsed={() => setDraft(null)}
+                onError={setError}
+                onBack={() => setChatId(null)}
+                compact
+                infoOverlay
+              />
+            </div>
+          </>
         ) : (
           <ChatList
             account={account}
@@ -860,6 +870,7 @@ function Conversation({
   onError,
   onBack,
   compact,
+  infoOverlay,
 }: {
   account: NativeAccount;
   chatId: string;
@@ -875,6 +886,8 @@ function Conversation({
   onBack?: () => void;
   /** Choose the compact composer layout (tools above the input). */
   compact?: boolean;
+  /** Open the info panel over the conversation instead of beside it (embedded in a tile). */
+  infoOverlay?: boolean;
 }) {
   const [info, setInfo] = useState(false);
   /** A group member whose profile was opened from a bubble; replaces the chat's own info panel. */
@@ -1384,6 +1397,7 @@ function Conversation({
           connected={connected}
           picture={profileId ? null : picture}
           onOpenChat={onOpenChat}
+          overlay={infoOverlay}
           onClose={() => {
             setProfileId(null);
             setInfo(false);

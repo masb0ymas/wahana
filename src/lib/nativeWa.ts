@@ -109,6 +109,8 @@ export interface NativeReply {
 export interface NativeReceipt {
   id: string;
   name: string;
+  /** "+62…" when the number is known; null when it is not. */
+  phone: string | null;
   deliveredAt: number | null;
   readAt: number | null;
   playedAt: number | null;

@@ -2671,6 +2671,8 @@ pub fn wa_native_mark_read(
 pub struct MessageReceipt {
     pub id: String,
     pub name: String,
+    /// "+62…" when the number is known; null when it is not.
+    pub phone: Option<String>,
     pub delivered_at: Option<i64>,
     pub read_at: Option<i64>,
     pub played_at: Option<i64>,
@@ -2696,13 +2698,16 @@ pub fn wa_native_message_info(
             Some(i) => i,
             None => {
                 let w = db.who(&who).ok();
+                let phone = w.as_ref().and_then(|w| w.phone.clone());
                 let name = w
                     .as_ref()
-                    .and_then(|w| w.name.clone().or(w.phone.clone().map(|p| format!("+{p}"))))
+                    .and_then(|w| w.name.clone())
+                    .or_else(|| phone.clone())
                     .unwrap_or_else(|| format!("+{}", who.split('@').next().unwrap_or(&who)));
                 out.push(MessageReceipt {
                     id: who.clone(),
                     name,
+                    phone,
                     delivered_at: None,
                     read_at: None,
                     played_at: None,

@@ -7,7 +7,18 @@ const fmt = (ms: number) =>
   new Date(ms).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 /** Sent, delivered, read and played times of a message I sent; per recipient in a group. */
-export function NativeMessageInfo({ accountId, message: m, onClose }: { accountId: string; message: NativeMessage; onClose: () => void }) {
+export function NativeMessageInfo({
+  accountId,
+  message: m,
+  onClose,
+  onOpenChat,
+}: {
+  accountId: string;
+  message: NativeMessage;
+  onClose: () => void;
+  /** Open the direct chat with a recipient who read or received this message. */
+  onOpenChat?: (ids: string[]) => void;
+}) {
   const [rows, setRows] = useState<NativeReceipt[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const group = isGroup(m.chatId);
@@ -34,6 +45,14 @@ export function NativeMessageInfo({ accountId, message: m, onClose }: { accountI
   const first = (pick: (r: NativeReceipt) => number | null) => {
     const times = (rows ?? []).map(pick).filter((t): t is number => t != null);
     return times.length ? Math.min(...times) : null;
+  };
+
+  // The recipient's direct chat may run on their privacy id (`@lid`) or phone-number id,
+  // so offer both and let the caller open whichever chat already exists (mirrors `senderChatIds`).
+  const openChat = (r: NativeReceipt) => {
+    const ids = r.phone ? [r.id, `${r.phone.replace(/\D/g, "")}@s.whatsapp.net`] : [r.id];
+    onOpenChat?.(ids);
+    onClose();
   };
 
   return (
@@ -79,8 +98,20 @@ export function NativeMessageInfo({ accountId, message: m, onClose }: { accountI
           )}
           {rows && group && (
             <>
-              <Section title="Read by" rows={rows.filter((r) => r.readAt)} at={(r) => r.readAt} icon={blue} />
-              <Section title="Delivered to" rows={rows.filter((r) => r.deliveredAt && !r.readAt)} at={(r) => r.deliveredAt} icon={grey} />
+              <Section
+                title="Read by"
+                rows={rows.filter((r) => r.readAt)}
+                at={(r) => r.readAt}
+                icon={blue}
+                onRowClick={onOpenChat ? openChat : undefined}
+              />
+              <Section
+                title="Delivered to"
+                rows={rows.filter((r) => r.deliveredAt && !r.readAt)}
+                at={(r) => r.deliveredAt}
+                icon={grey}
+                onRowClick={onOpenChat ? openChat : undefined}
+              />
               {rows.length === 0 && (
                 <div className="py-2 text-xs text-neutral-500">
                   {m.ack >= 2 ? "Per-person times were not recorded for this message." : "No receipts yet."}
@@ -100,25 +131,42 @@ function Section({
   rows,
   at,
   icon,
+  onRowClick,
 }: {
   title: string;
   rows: NativeReceipt[];
   at: (r: NativeReceipt) => number | null;
   icon: React.ReactNode;
+  onRowClick?: (r: NativeReceipt) => void;
 }) {
   if (rows.length === 0) return null;
+  const ordered = [...rows].sort((a, b) => (at(b) ?? 0) - (at(a) ?? 0));
   return (
     <div className="mt-2 border-t border-neutral-100 dark:border-neutral-800 pt-2">
       <div className="text-xs font-medium text-neutral-500 mb-1">
         {title} ({rows.length})
       </div>
-      {rows.map((r) => (
-        <div key={r.id} className="flex items-center gap-2 py-1 text-sm">
-          {icon}
-          <span className="flex-1 truncate">{r.name}</span>
-          <span className="text-xs text-neutral-500">{at(r) ? fmt(at(r)!) : ""}</span>
-        </div>
-      ))}
+      {ordered.map((r) => {
+        const body = (
+          <>
+            <div className="truncate">{r.name}</div>
+            {r.phone && r.phone !== r.name && <div className="truncate text-xs text-neutral-500">{r.phone}</div>}
+          </>
+        );
+        return (
+          <div key={r.id} className="flex items-center gap-2 py-1 text-sm">
+            {icon}
+            {onRowClick ? (
+              <button type="button" title="Open chat" onClick={() => onRowClick(r)} className="flex-1 min-w-0 text-left hover:underline">
+                {body}
+              </button>
+            ) : (
+              <div className="flex-1 min-w-0">{body}</div>
+            )}
+            <span className="text-xs text-neutral-500">{at(r) ? fmt(at(r)!) : ""}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1420,7 +1420,14 @@ function Conversation({
             onClose={() => setMenu(null)}
           />
         )}
-        {infoFor && <NativeMessageInfo accountId={account.id} message={infoFor} onClose={() => setInfoFor(null)} />}
+        {infoFor && (
+          <NativeMessageInfo
+            accountId={account.id}
+            message={infoFor}
+            onClose={() => setInfoFor(null)}
+            onOpenChat={(ids) => onOpenChat(ids)}
+          />
+        )}
         {forward && (
           <NativeForwardDialog
             accountId={account.id}

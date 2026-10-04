@@ -442,8 +442,21 @@ function ChatList({
               if (e.key === "Enter" && shown[0]) onSelect(shown[0].id);
             }}
             placeholder="Search chats (⌘K)"
-            className="w-full rounded-lg bg-neutral-100 dark:bg-neutral-800 pl-8 pr-3 py-1.5 text-sm outline-none"
+            className="w-full rounded-lg bg-neutral-100 dark:bg-neutral-800 pl-8 pr-8 py-1.5 text-sm outline-none"
           />
+          {q && (
+            <button
+              onClick={() => {
+                setQ("");
+                searchRef.current?.focus();
+              }}
+              title="Clear search"
+              aria-label="Clear search"
+              className="absolute right-2.5 top-2.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
         <div className="flex gap-1 items-center flex-wrap">
           {tabOrder.map((f) => (

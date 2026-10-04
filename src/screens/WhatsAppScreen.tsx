@@ -1441,6 +1441,7 @@ const Bubble = memo(function Bubble({
   const reactionMap = useReactions((s) => s.byMsg[bareId(m.id)]);
   const tomb = useRevoked((s) => s.items[`${convKey(accountId, m.chatId)}:${bareId(m.id)}`]);
   const [showEdits, setShowEdits] = useState(false);
+  const [bodyOpen, setBodyOpen] = useState(false);
   // Group mentions are digits; the members list (shared with the composer) names them.
   const group = m.chatId.endsWith("@g.us");
   const me = useWhatsApp((s) => s.accounts.find((a) => a.id === accountId)?.me ?? null);
@@ -1453,6 +1454,8 @@ const Bubble = memo(function Bubble({
   const mentionFor = useMemo(() => mentionResolver(groupInfo, me?.id), [groupInfo, me?.id]);
   // Deleted for everyone: the stored copy keeps what it said; older tombstones only know that it went.
   const revoked = m.revokedAt != null || (!!tomb && (tomb.kind ?? "revoked") === "revoked");
+  // Deleted messages keep their full text (struck through); a long body is clamped with a Read more toggle.
+  const longBody = !revoked && !!m.body && (m.body.length > 350 || m.body.split("\n").length > 6);
   // A channel reports totals only; mine comes from what I reacted locally.
   const reactions =
     m.channelReactions.length > 0
@@ -1535,11 +1538,19 @@ const Bubble = memo(function Bubble({
           )}
           <div className={cn(revoked && "opacity-60")}>
             {album ? (
-              <div className="mb-1 grid grid-cols-2 gap-0.5 w-[300px]">
-                {album.map((a) => (
-                  <NativeMediaView key={a.id} accountId={accountId} message={a} connected={connected} tile />
-                ))}
-              </div>
+              album.length <= 4 ? (
+                <div className="mb-1 grid grid-cols-2 gap-0.5 w-[300px]">
+                  {album.map((a) => (
+                    <NativeMediaView key={a.id} accountId={accountId} message={a} connected={connected} tile />
+                  ))}
+                </div>
+              ) : (
+                <div className="hscroll mb-1 grid grid-rows-2 grid-flow-col gap-0.5 w-[300px] overflow-x-auto overflow-y-hidden [grid-auto-columns:calc(50%-1px)]">
+                  {album.map((a) => (
+                    <NativeMediaView key={a.id} accountId={accountId} message={a} connected={connected} tile />
+                  ))}
+                </div>
+              )
             ) : m.media ? (
               <div className={cn(m.body && "mb-1")}>
                 <NativeMediaView accountId={accountId} message={m} connected={connected} />
@@ -1559,7 +1570,17 @@ const Bubble = memo(function Bubble({
             {m.body && !m.media && !revoked && <LinkPreviewCard message={m} />}
             {m.body && (
               <div className={cn("break-words", revoked && "line-through decoration-neutral-400")}>
-                <WaMarkdown text={m.body} mentions={group ? mentionFor : undefined} />
+                <div className={cn(!bodyOpen && longBody && "line-clamp-6")}>
+                  <WaMarkdown text={m.body} mentions={group ? mentionFor : undefined} />
+                </div>
+                {longBody && (
+                  <button
+                    onClick={() => setBodyOpen((v) => !v)}
+                    className="mt-1 text-xs font-medium text-wa-dark dark:text-wa hover:underline"
+                  >
+                    {bodyOpen ? "Show less" : "Read more"}
+                  </button>
+                )}
               </div>
             )}
           </div>

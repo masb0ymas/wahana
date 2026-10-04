@@ -53,3 +53,10 @@ select option {
 ::-webkit-scrollbar-thumb {
   @apply bg-neutral-300 dark:bg-neutral-700 rounded-full;
 }
+/* Album photo strip: a slim horizontal bar so the sideways scroll is discoverable. */
+.hscroll {
+  scrollbar-width: thin;
+}
+.hscroll::-webkit-scrollbar {
+  height: 6px;
+}

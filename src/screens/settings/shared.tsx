@@ -11,7 +11,7 @@ export const ScopeCtx = createContext<{ scope: string; setScope: (v: string) => 
 export function AccountScopePicker() {
   const { scope, setScope } = useContext(ScopeCtx);
   const accounts = useAccounts();
-  // Keep a since-removed account selectable so its stored overrides can still be seen/cleared.
+  // Keep a since-removed account selectable so its stored entries can still be seen/cleared.
   const known = accounts.some((a) => a.key === scope);
   return (
     <label className="flex items-center gap-2 text-sm">
@@ -19,10 +19,11 @@ export function AccountScopePicker() {
       <select
         value={scope}
         onChange={(e) => setScope(e.target.value)}
-        className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm outline-none"
+        disabled={accounts.length === 0}
+        className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm outline-none disabled:opacity-60"
       >
-        <option value="">All accounts (default)</option>
-        {scope && !known && <option value={scope}>{scope}</option>}
+        {accounts.length === 0 && <option value="">No accounts connected</option>}
+        {accounts.length > 0 && scope && !known && <option value={scope}>{scope}</option>}
         {accounts.map((a) => (
           <option key={a.key} value={a.key}>
             {a.label}

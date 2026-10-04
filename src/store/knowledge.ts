@@ -50,9 +50,9 @@ export const listDocs = async (account?: string) =>
     ? (await db()).select<KbDoc[]>("SELECT * FROM kb_docs ORDER BY updated_at DESC")
     : (await db()).select<KbDoc[]>("SELECT * FROM kb_docs WHERE account = $1 ORDER BY updated_at DESC", [account]);
 
-/** Docs that apply to an account: the global ones plus that account's own. */
+/** Docs that belong to one account. Every entry is per account now; no global rows exist. */
 export const listDocsFor = async (account: string) =>
-  (await db()).select<KbDoc[]>("SELECT * FROM kb_docs WHERE account IS NULL OR account = $1 ORDER BY updated_at DESC", [account]);
+  (await db()).select<KbDoc[]>("SELECT * FROM kb_docs WHERE account = $1 ORDER BY updated_at DESC", [account]);
 
 export const getDoc = async (id: string) => (await db()).select<KbDoc[]>("SELECT * FROM kb_docs WHERE id = $1", [id]).then((r) => r[0]);
 
@@ -131,46 +131,47 @@ export async function deleteDoc(id: string) {
 const READY = "AND doc_id IN (SELECT id FROM kb_docs WHERE status <> 'new')";
 
 /**
- * Chunks that may answer for `account`: the account's own plus the global ones. A chunk is never
- * returned for an account it does not belong to (model mismatch would also mix vector spaces).
- * `account = null` means "global entries only".
+ * Chunks that may answer for `account`: only the account's own. Entries are per account now, so a
+ * chunk is never returned for another account (a model mismatch would also mix vector spaces).
  */
-export async function candidateChunks(account: string | null, model: string) {
-  const d = await db();
-  return account === null
-    ? d.select<Pick<KbChunk, "doc_id" | "account" | "ord" | "text" | "embedding" | "dim">[]>(
-        `SELECT doc_id, account, ord, text, embedding, dim FROM kb_chunks WHERE model = $1 AND account IS NULL ${READY}`,
-        [model],
-      )
-    : d.select<Pick<KbChunk, "doc_id" | "account" | "ord" | "text" | "embedding" | "dim">[]>(
-        `SELECT doc_id, account, ord, text, embedding, dim FROM kb_chunks WHERE model = $1 AND (account IS NULL OR account = $2) ${READY}`,
-        [model, account],
-      );
+export async function candidateChunks(account: string, model: string) {
+  return (await db()).select<Pick<KbChunk, "doc_id" | "account" | "ord" | "text" | "embedding" | "dim">[]>(
+    `SELECT doc_id, account, ord, text, embedding, dim FROM kb_chunks WHERE model = $1 AND account = $2 ${READY}`,
+    [model, account],
+  );
 }
 
 export const totalChunks = async () =>
   (await (await db()).select<{ n: number }[]>("SELECT COUNT(*) AS n FROM kb_chunks")).map((r) => r.n)[0] ?? 0;
 
-/** Vectors visible to one account (its own plus the global ones). */
+/** Vectors belonging to one account. */
 export async function chunksFor(account: string): Promise<number> {
-  const rows = await (
-    await db()
-  ).select<{ n: number }[]>("SELECT COUNT(*) AS n FROM kb_chunks WHERE account IS NULL OR account = $1", [account]);
+  const rows = await (await db()).select<{ n: number }[]>("SELECT COUNT(*) AS n FROM kb_chunks WHERE account = $1", [account]);
   return rows[0]?.n ?? 0;
+}
+
+/**
+ * Legacy global entries (account IS NULL) have no owner once every entry is per account: move them
+ * to one account. Idempotent, so it is safe to call on every launch (only NULL rows are touched).
+ */
+export async function reassignUnownedToAccount(account: string) {
+  const d = await db();
+  await d.execute("UPDATE kb_docs SET account = $1 WHERE account IS NULL", [account]);
+  await d.execute("UPDATE kb_chunks SET account = $1 WHERE account IS NULL", [account]);
 }
 
 /**
  * Docs whose vectors are missing, were made with a different model, or have a dimension that does
  * not match the vectors stored for that model (a provider can serve the same model name with a
  * different width). Such vectors can never be compared safely, so those entries need a re-index.
- * With an account, that account's own entries plus the global ones are counted.
+ * With an account, only that account's entries are counted.
  */
 export async function staleDocs(model: string, account?: string): Promise<number> {
   const rows = await (
     await db()
   ).select<{ n: number }[]>(
     `SELECT COUNT(*) AS n FROM kb_docs d
-      WHERE (d.account IS NULL OR $2 IS NULL OR d.account = $2)
+      WHERE ($2 IS NULL OR d.account = $2)
         AND (
           d.embed_model IS NULL
           OR d.embed_model <> $1

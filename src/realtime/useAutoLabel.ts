@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useSettings } from "@/store/settings";
 import { aiConfigured, suggestLabels } from "@/lib/ai";
 import { displayId, isChannel, isGroup, convKey } from "@/lib/utils";
-import { accountId } from "@/lib/account";
+import { accountId, nativeAccountKey } from "@/lib/account";
 import { nativeWa } from "@/lib/nativeWa";
 import { nativeTranscript } from "@/screens/whatsapp/NativeAi";
 import { useWhatsApp } from "@/store/whatsapp";
@@ -44,6 +44,7 @@ export function useAutoLabel() {
         chatName,
         existing: labels.map((l) => l.name),
         language: useSettings.getState().aiTranslateTo,
+        account: nativeAccountKey(id),
       });
       const ids = labels.filter((l) => s.labels.includes(l.name)).map((l) => l.id);
       if (!ids.length) return;

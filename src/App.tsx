@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquare,
   Smartphone,
@@ -37,6 +38,8 @@ import { useBadge } from "@/realtime/useBadge";
 import { useReactions } from "@/store/reactions";
 import { useUpdater } from "@/realtime/useUpdater";
 import { Button } from "@/components/ui";
+import { nativeAccountKey } from "@/lib/account";
+import { migrateUnownedToAccount } from "@/lib/migrateScope";
 
 type Tab = "chats" | "grid" | "status" | "features" | "media" | "accounts" | "settings";
 
@@ -61,6 +64,20 @@ export default function App() {
   useBroadcastRunner();
   useAutoReply();
   useAutoLabel();
+  // Everything is per account now: move legacy global Knowledge/quick-reply rows to the first
+  // account once, so they are not orphaned. Idempotent, so it also covers a restored backup.
+  const qc = useQueryClient();
+  const migratedScope = useRef(false);
+  useEffect(() => {
+    if (migratedScope.current || !waHydrated || waAccounts.length === 0) return;
+    migratedScope.current = true;
+    void migrateUnownedToAccount(nativeAccountKey(waAccounts[0]!.id))
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ["kb-docs"] });
+        qc.invalidateQueries({ queryKey: ["quick-replies"] });
+      })
+      .catch((e) => console.warn("scope migration failed", e));
+  }, [waHydrated, waAccounts, qc]);
   useEffect(() => {
     pruneLogs().catch((e) => console.warn("log pruning failed", e));
   }, []);

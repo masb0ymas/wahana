@@ -2,25 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Zap } from "lucide-react";
 import { listQuickReplies, expandTemplate } from "@/store/quickReplies";
-import { useActiveAccount } from "@/lib/account";
 import { cn } from "@/lib/utils";
 
 /** Popover shown while the composer starts with "/…"; Enter/Tab inserts the expanded template. */
 export function QuickReplyPicker({
+  account,
   query,
   ctx,
   onPick,
   onClose,
 }: {
+  /** Account key of the composer that opened the picker; only its replies are offered. */
+  account: string;
   query: string;
   ctx: { name?: string; phone?: string };
   onPick: (text: string) => void;
   onClose: () => void;
 }) {
-  const account = useActiveAccount();
   const { data } = useQuery({
-    queryKey: ["quick-replies", account?.key ?? null],
-    queryFn: () => listQuickReplies(account?.key),
+    queryKey: ["quick-replies", account],
+    queryFn: () => listQuickReplies(account),
   });
   const [index, setIndex] = useState(0);
   const list = useMemo(() => {

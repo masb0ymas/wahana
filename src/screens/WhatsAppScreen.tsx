@@ -2091,6 +2091,7 @@ function Composer({
     >
       {slash !== null && (
         <QuickReplyPicker
+          account={nativeAccountKey(account.id)}
           query={slash}
           ctx={{ name: chatName, phone: chatId.endsWith("@s.whatsapp.net") ? `+${chatId.split("@")[0]}` : "" }}
           onClose={() => setSlash(null)}
@@ -2171,7 +2172,7 @@ function Composer({
             <Paperclip size={18} />
           </Button>
           <TranslateDraftButton text={text} onResult={setText} />
-          <WriteAssistButton text={text} onResult={setText} />
+          <WriteAssistButton text={text} account={nativeAccountKey(account.id)} onResult={setText} />
           <StickerButton onPick={sendSticker} disabled={!connected || !!editing || sending} />
           <EmojiButton
             onPick={(emoji) => {

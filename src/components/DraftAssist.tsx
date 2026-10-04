@@ -43,7 +43,16 @@ export function TranslateDraftButton({ text, onResult }: { text: string; onResul
 }
 
 /** ✨ menu in the composer: rewrite the draft (fix / formal / casual / …) with one-step undo. */
-export function WriteAssistButton({ text, onResult }: { text: string; onResult: (t: string) => void }) {
+export function WriteAssistButton({
+  text,
+  account,
+  onResult,
+}: {
+  text: string;
+  /** Account key of the composer's account, so the rewrite uses its persona. */
+  account?: string;
+  onResult: (t: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<RewriteMode | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -58,7 +67,7 @@ export function WriteAssistButton({ text, onResult }: { text: string; onResult: 
     setErr(null);
     try {
       const before = text;
-      const out = await rewriteDraft(text, mode);
+      const out = await rewriteDraft(text, mode, account);
       if (out) {
         setUndo(before);
         onResult(out);

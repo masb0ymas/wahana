@@ -305,10 +305,10 @@ const REWRITE_INSTRUCTIONS: Record<RewriteMode, string> = {
 };
 
 /** Rewrite a draft in the composer. Keeps the draft's language and WhatsApp formatting. */
-export function rewriteDraft(text: string, mode: RewriteMode) {
+export function rewriteDraft(text: string, mode: RewriteMode, account?: string) {
   const system = `You edit a WhatsApp message the user is about to send. ${REWRITE_INSTRUCTIONS[mode]}
 Rules: reply with the rewritten message only — no preamble, quotes or explanations. Keep the same language as the draft. Preserve emoji, URLs, @mentions, phone numbers, line breaks and WhatsApp formatting markers (*bold*, _italic_, ~strike~, \`\`\`code\`\`\`) where they make sense.`;
-  return complete(system, text, { maxTokens: Math.min(4000, Math.max(256, text.length * 3)), fast: true });
+  return complete(system, text, { maxTokens: Math.min(4000, Math.max(256, text.length * 3)), fast: true, account });
 }
 
 /** Three short reply suggestions for the current conversation (transcript from `transcript()`). Returns [] when the model output is unusable. */
@@ -500,12 +500,12 @@ export interface LabelSuggestion {
 /** Pick which of the existing labels fit a chat (and optionally propose a new one). */
 export async function suggestLabels(
   text: string,
-  opts: { chatName: string; existing: string[]; language: string },
+  opts: { chatName: string; existing: string[]; language: string; account?: string },
 ): Promise<LabelSuggestion> {
   const system = `You classify a WhatsApp chat named "${opts.chatName}" for the user ("You") using their own label set.
 Existing labels: ${opts.existing.length ? opts.existing.map((l) => JSON.stringify(l)).join(", ") : "(none)"}.
 Return a JSON object only: {"labels": string[] (subset of existing labels that clearly apply, may be empty), "suggestNew": string|undefined (a short new label name only when no existing one fits and a category is obvious, e.g. "Lead", "Complaint", "Supplier", "Spam", "Family"), "reason": string (one sentence in ${langName(opts.language)})}.`;
-  const raw = await complete(system, `Recent messages (oldest first):\n${text}`, { maxTokens: 300, fast: true });
+  const raw = await complete(system, `Recent messages (oldest first):\n${text}`, { maxTokens: 300, fast: true, account: opts.account });
   const m = raw.match(/\{[\s\S]*\}/);
   try {
     const v = JSON.parse(m ? m[0] : raw) as Partial<LabelSuggestion>;

@@ -9,7 +9,7 @@ import { cn, errMsg } from "@/lib/utils";
 import { embedConfig, embedConfigIssue } from "@/lib/ai";
 import { useAccountLabel } from "@/lib/account";
 import { useSettings } from "@/store/settings";
-import { deleteDoc, listDocs, listDocsFor, saveDoc, type KbDoc, type KbDocType } from "@/store/knowledge";
+import { deleteDoc, listDocsFor, saveDoc, type KbDoc, type KbDocType } from "@/store/knowledge";
 import {
   KB_MAX_DOC_CHARS,
   docChunkTexts,
@@ -45,10 +45,16 @@ export function KnowledgeSection() {
 
   const docs = useQuery({
     queryKey: ["kb-docs", scope],
-    queryFn: () => (scope === "" ? listDocs() : listDocsFor(scope)),
+    queryFn: () => listDocsFor(scope),
+    enabled: !!scope,
     refetchInterval: 15_000,
   });
-  const stats = useQuery({ queryKey: ["kb-stats", scope], queryFn: () => kbStats(scope || undefined), refetchInterval: 15_000 });
+  const stats = useQuery({
+    queryKey: ["kb-stats", scope],
+    queryFn: () => kbStats(scope),
+    enabled: !!scope,
+    refetchInterval: 15_000,
+  });
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["kb-docs"] });
     qc.invalidateQueries({ queryKey: ["kb-stats"] });
@@ -72,12 +78,20 @@ export function KnowledgeSection() {
 
   const list = docs.data ?? [];
   const newDoc = editing === "table" || editing === "text" ? null : editing;
-  // Entries are per account unless "All accounts" is selected; the scope of the entry being edited
-  // (or created) is shown in the editor so a global entry is never created by accident.
-  const targetAccount = newDoc ? newDoc.account : scope || null;
-  const scopeLabel = targetAccount ? label(targetAccount) : "All accounts";
+  // Entries are per account: the entry being edited/created belongs to the selected account, shown
+  // in the editor so it is always clear which account's AI replies can use it.
+  const targetAccount = newDoc ? (newDoc.account ?? scope) : scope;
+  const scopeLabel = label(targetAccount);
   const chunks = stats.data?.chunks ?? 0;
   const stale = stats.data?.stale ?? 0;
+
+  if (!scope) {
+    return (
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 py-4 text-sm text-neutral-500">
+        Connect a WhatsApp account first to manage knowledge.
+      </div>
+    );
+  }
 
   return (
     <>
@@ -108,7 +122,7 @@ export function KnowledgeSection() {
               setBusy("all");
               setErr(null);
               try {
-                const r = await reindexAll(scope || undefined);
+                const r = await reindexAll(scope);
                 if (r.failed) setErr(`${r.failed} entr${r.failed > 1 ? "ies" : "y"} failed to index.`);
               } catch (e) {
                 setErr(errMsg(e));
@@ -138,11 +152,7 @@ export function KnowledgeSection() {
               <Search size={12} className="text-neutral-400" />
               <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Test retrieval</span>
             </div>
-            <div className="text-[11px] text-neutral-500">
-              {scope
-                ? "Searches this account's entries plus the global ones."
-                : "Searches global entries only — pick an account above to test its full context."}
-            </div>
+            <div className="text-[11px] text-neutral-500">Searches this account's entries.</div>
             <div className="flex gap-2">
               <input
                 value={testQ}
@@ -153,7 +163,7 @@ export function KnowledgeSection() {
                   if (e.key !== "Enter" || !testQ.trim() || test.busy || !configured) return;
                   setTest({ busy: true });
                   try {
-                    const hits = await retrieveKnowledge(scope || null, testQ.trim(), { k: kbTopK, minScore: kbMinScore });
+                    const hits = await retrieveKnowledge(scope, testQ.trim(), { k: kbTopK, minScore: kbMinScore });
                     setTest({ busy: false, hits: hits.map((h) => ({ text: h.text, score: h.score })) });
                   } catch (e2) {
                     setTest({ busy: false, error: errMsg(e2) });
@@ -167,7 +177,7 @@ export function KnowledgeSection() {
                 onClick={async () => {
                   setTest({ busy: true });
                   try {
-                    const hits = await retrieveKnowledge(scope || null, testQ.trim(), { k: kbTopK, minScore: kbMinScore });
+                    const hits = await retrieveKnowledge(scope, testQ.trim(), { k: kbTopK, minScore: kbMinScore });
                     setTest({ busy: false, hits: hits.map((h) => ({ text: h.text, score: h.score })) });
                   } catch (e) {
                     setTest({ busy: false, error: errMsg(e) });
@@ -212,7 +222,6 @@ export function KnowledgeSection() {
             key={d.id}
             doc={d}
             model={model}
-            label={label}
             busy={busy === d.id}
             onEdit={() => setEditing(d)}
             onIndex={() => index(d.id)}
@@ -233,9 +242,7 @@ export function KnowledgeSection() {
           />
         ))}
         {!docs.isLoading && !docs.error && list.length === 0 && (
-          <div className="text-sm text-neutral-500">
-            No knowledge entries yet. Entries are per account — check the "Apply to" selector above.
-          </div>
+          <div className="text-sm text-neutral-500">No knowledge entries for this account yet.</div>
         )}
       </div>
 
@@ -314,7 +321,6 @@ function NumberField({
 function DocRow({
   doc,
   model,
-  label,
   busy,
   onEdit,
   onIndex,
@@ -322,7 +328,6 @@ function DocRow({
 }: {
   doc: KbDoc;
   model: string;
-  label: (key: string) => string;
   busy: boolean;
   onEdit: () => void;
   onIndex: () => void;
@@ -341,17 +346,6 @@ function DocRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-medium truncate">{doc.title}</span>
-          <span
-            className={cn(
-              "shrink-0 text-[10px] rounded-full px-1.5 py-0.5",
-              doc.account
-                ? "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300"
-                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500",
-            )}
-            title={doc.account ? "Only this account can use these facts" : "Every account can use these facts"}
-          >
-            {doc.account ? label(doc.account) : "all accounts"}
-          </span>
           {busy ? (
             <Badge tone="blue">
               <Loader2 size={10} className="animate-spin" /> indexing
@@ -494,19 +488,8 @@ function DocEditor({
       </div>
 
       <div className="flex items-center gap-2 text-[11px] text-neutral-500">
-        <span
-          className={cn(
-            "rounded-full px-1.5 py-0.5",
-            account ? "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300" : "bg-neutral-100 dark:bg-neutral-800",
-          )}
-        >
-          {scopeLabel}
-        </span>
-        <span>
-          {account
-            ? "Only this account's AI replies can use this entry."
-            : 'Every account\'s AI replies can use this entry. Pick an account in "Apply to" above to limit it.'}
-        </span>
+        <span className="rounded-full px-1.5 py-0.5 bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">{scopeLabel}</span>
+        <span>Only this account's AI replies can use this entry.</span>
       </div>
 
       {type === "table" ? (

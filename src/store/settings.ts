@@ -68,8 +68,8 @@ export interface Prefs {
   /** Minutes auto-reply stays quiet in a chat after the user wrote there themselves (0 = never). */
   autoReplyManualQuietMin: number;
   // ── Per-account overrides ──
-  // Keyed by account (`native:<accountId>`); a missing entry
-  // falls back to the global value above, so one setting can still cover every number.
+  // Keyed by account (`native:<accountId>`). A missing entry falls back to the built-in default
+  // above; that default is not editable from a scope of its own anymore.
   sendTypingByAccount: Record<string, boolean>;
   readReceiptsByAccount: Record<string, ReadReceipts>;
   /** Persona per account; missing or empty = use aiSystemPrompt. */

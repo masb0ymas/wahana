@@ -10,17 +10,15 @@ export function TweaksSection() {
   const { scope } = useContext(ScopeCtx);
   const qc = useQueryClient();
 
-  // With an account selected these show its override, or the global default it inherits.
-  const sendTyping = scope ? (s.sendTypingByAccount[scope] ?? s.sendTyping) : s.sendTyping;
-  const readReceipts = scope ? (s.readReceiptsByAccount[scope] ?? s.readReceipts) : s.readReceipts;
-  const overridden = !!scope && (scope in s.sendTypingByAccount || scope in s.readReceiptsByAccount);
+  // Values are per account; a value the account has not set falls back to the built-in default
+  // (`s.sendTyping` / `s.readReceipts`), which is no longer editable from a separate scope.
+  const sendTyping = s.sendTypingByAccount[scope] ?? s.sendTyping;
+  const readReceipts = s.readReceiptsByAccount[scope] ?? s.readReceipts;
+  const overridden = scope in s.sendTypingByAccount || scope in s.readReceiptsByAccount;
 
-  const setSendTyping = (v: boolean) =>
-    scope ? s.save({ sendTypingByAccount: { ...s.sendTypingByAccount, [scope]: v } }) : s.save({ sendTyping: v });
-  const setReadReceipts = (v: ReadReceipts) =>
-    scope ? s.save({ readReceiptsByAccount: { ...s.readReceiptsByAccount, [scope]: v } }) : s.save({ readReceipts: v });
+  const setSendTyping = (v: boolean) => s.save({ sendTypingByAccount: { ...s.sendTypingByAccount, [scope]: v } });
+  const setReadReceipts = (v: ReadReceipts) => s.save({ readReceiptsByAccount: { ...s.readReceiptsByAccount, [scope]: v } });
   const reset = () => {
-    if (!scope) return;
     const sendTypingByAccount = { ...s.sendTypingByAccount };
     const readReceiptsByAccount = { ...s.readReceiptsByAccount };
     delete sendTypingByAccount[scope];
@@ -42,18 +40,21 @@ export function TweaksSection() {
     },
     { value: "never", label: "Never", hint: "Senders keep grey ticks. Status views are not reported either." },
   ];
+
+  if (!scope) {
+    return <p className="text-sm text-neutral-500">Connect a WhatsApp account first to change these.</p>;
+  }
+
   return (
     <>
-      {scope && (
-        <div className="flex items-center gap-2 text-xs text-neutral-500">
-          <span className="flex-1">{overridden ? "This account has its own values." : "This account uses the defaults."}</span>
-          {overridden && (
-            <Button size="sm" variant="ghost" onClick={reset}>
-              Reset to default
-            </Button>
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-2 text-xs text-neutral-500">
+        <span className="flex-1">{overridden ? "This account has its own values." : "This account uses the defaults."}</span>
+        {overridden && (
+          <Button size="sm" variant="ghost" onClick={reset}>
+            Reset to default
+          </Button>
+        )}
+      </div>
       <Toggle
         label="Show typing indicator"
         hint='Sends "typing…" while you write. Off = they only see the message when it arrives.'

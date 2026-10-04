@@ -18,11 +18,16 @@ export function QuickRepliesSection() {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["quick-replies", scope],
-    queryFn: () => listQuickReplies(scope === "" ? undefined : scope),
+    queryFn: () => listQuickReplies(scope),
+    enabled: !!scope,
   });
   const [editing, setEditing] = useState<Partial<QuickReply> | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ["quick-replies"] });
+
+  if (!scope) {
+    return <p className="text-sm text-neutral-500">Connect a WhatsApp account first to manage quick replies.</p>;
+  }
 
   return (
     <>
@@ -60,7 +65,7 @@ export function QuickRepliesSection() {
             </button>
           </li>
         ))}
-        {q.data?.length === 0 && !editing && <li className="text-sm text-neutral-500">No quick replies yet.</li>}
+        {q.data?.length === 0 && !editing && <li className="text-sm text-neutral-500">No quick replies for this account yet.</li>}
       </ul>
       {editing ? (
         <div className="space-y-2 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-3">
@@ -77,7 +82,7 @@ export function QuickRepliesSection() {
             <div>
               <Label>Available in</Label>
               <div className="px-2 py-2 text-sm text-neutral-500">
-                {label(scope === "" ? null : scope) ?? "All accounts"}
+                {label(scope)}
                 <span className="block text-[11px]">Change it with the "Apply to" selector at the top.</span>
               </div>
             </div>
@@ -101,7 +106,7 @@ export function QuickRepliesSection() {
                 if (!(editing.text ?? "").trim()) return setErr("Text is required.");
                 await saveQuickReply({
                   id: editing.id ?? Math.random().toString(36).slice(2, 10),
-                  account: scope || null,
+                  account: scope,
                   shortcut,
                   text: editing.text!.trim(),
                 });

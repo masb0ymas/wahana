@@ -126,19 +126,15 @@ describe("buildQuery", () => {
 });
 
 describe("chunkVisibleTo", () => {
-  it("global entries apply to every account", () => {
-    expect(chunkVisibleTo(null, "native:a")).toBe(true);
-    expect(chunkVisibleTo(null, "native:b")).toBe(true);
-    expect(chunkVisibleTo(null, null)).toBe(true);
-  });
-
-  it("an account's entries are never visible to another account", () => {
+  it("an entry is only visible to its own account", () => {
     expect(chunkVisibleTo("native:a", "native:a")).toBe(true);
     expect(chunkVisibleTo("native:a", "native:b")).toBe(false);
     expect(chunkVisibleTo("native:b", "native:a")).toBe(false);
   });
 
-  it("the un-scoped view ('All accounts') sees global entries only", () => {
+  it("a legacy unowned entry (account null) is visible to no one", () => {
+    expect(chunkVisibleTo(null, "native:a")).toBe(false);
     expect(chunkVisibleTo("native:a", null)).toBe(false);
+    expect(chunkVisibleTo(null, null)).toBe(false);
   });
 });

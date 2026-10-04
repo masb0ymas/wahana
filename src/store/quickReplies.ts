@@ -1,20 +1,24 @@
-import { accountMatches } from "@/lib/account";
 import { db } from "@/store/scheduler";
 
 export interface QuickReply {
   id: string;
-  /** Account this reply is limited to (`native:<id>`), or null for every account. */
+  /** Account this reply belongs to (`native:<id>`), or null for a legacy entry not yet reassigned. */
   account: string | null;
   shortcut: string;
   text: string;
   created_at: number;
 }
 
-/** All quick replies (Settings), or — with an account — only those usable there. */
-export const listQuickReplies = async (account?: string) => {
-  const rows = await (await db()).select<QuickReply[]>("SELECT * FROM quick_replies ORDER BY shortcut");
-  return account === undefined ? rows : rows.filter((r) => accountMatches(r.account, account));
-};
+/** All quick replies (Settings/backup), or — with an account — only that account's own. */
+export const listQuickReplies = async (account?: string) =>
+  account === undefined
+    ? (await db()).select<QuickReply[]>("SELECT * FROM quick_replies ORDER BY shortcut")
+    : (await db()).select<QuickReply[]>("SELECT * FROM quick_replies WHERE account = $1 ORDER BY shortcut", [account]);
+
+/** Legacy global replies have no owner once every reply is per account: move them to one account. */
+export async function reassignUnownedQuickRepliesToAccount(account: string) {
+  await (await db()).execute("UPDATE quick_replies SET account = $1 WHERE account IS NULL", [account]);
+}
 
 export async function saveQuickReply(r: Omit<QuickReply, "created_at">) {
   await (

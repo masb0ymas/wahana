@@ -17,12 +17,6 @@ export const nativeChatKey = (accountId: string, chatId: string) => `native:${ac
 /** The native account id inside an account key, or null when the key is not a native account. */
 export const accountId = (key: string): string | null => (key.startsWith("native:") ? key.slice("native:".length) : null);
 
-/** Whether a stored scope applies to an account. `null` = every account. */
-export function accountMatches(scope: string | null, account: string | null): boolean {
-  if (!scope) return true;
-  return scope === account;
-}
-
 /** Every linked account. */
 export function useAccounts(): AccountRef[] {
   const native = useWhatsApp((s) => s.accounts);

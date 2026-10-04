@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { BookOpen, Bot, CalendarClock, Megaphone, SlidersHorizontal, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAccounts } from "@/lib/account";
 import { AccountScopePicker, ScopeCtx } from "./settings/shared";
 import { TweaksSection } from "./settings/TweaksSection";
 import { QuickRepliesSection } from "./settings/QuickRepliesSection";
@@ -41,22 +42,29 @@ function loadScope(): string {
 export function FeaturesScreen() {
   const [tab, setTabState] = useState<FeatureId>(loadTab);
   const [scope, setScopeState] = useState<string>(loadScope);
-  const setTab = (t: FeatureId) => {
+  const accounts = useAccounts();
+  const setTab = useCallback((t: FeatureId) => {
     setTabState(t);
     try {
       localStorage.setItem(TAB_KEY, t);
     } catch {
       /* ignore */
     }
-  };
-  const setScope = (v: string) => {
+  }, []);
+  const setScope = useCallback((v: string) => {
     setScopeState(v);
     try {
       localStorage.setItem(SCOPE_KEY, v);
     } catch {
       /* ignore */
     }
-  };
+  }, []);
+  // Everything is per account now: with nothing stored (or an empty value) fall back to the first
+  // account. A removed account's key stays selected so its orphaned entries can still be managed.
+  const effectiveScope = scope || accounts[0]?.key || "";
+  useEffect(() => {
+    if (scope === "" && effectiveScope) setScope(effectiveScope);
+  }, [scope, effectiveScope, setScope]);
   return (
     <div className="flex-1 min-w-0 flex flex-col">
       <nav className="shrink-0 flex items-center gap-1 px-4 pt-3 border-b border-neutral-200 dark:border-neutral-800">
@@ -81,7 +89,7 @@ export function FeaturesScreen() {
         {tab === "broadcast" && <BroadcastScreen />}
         {tab === "autoreply" && <AutoReplyScreen />}
         {tab === "knowledge" && (
-          <ScopeCtx.Provider value={{ scope, setScope }}>
+          <ScopeCtx.Provider value={{ scope: effectiveScope, setScope }}>
             <div className="flex-1 overflow-auto p-6">
               <div className="space-y-4">
                 <h1 className="text-xl font-semibold">Knowledge</h1>
@@ -98,7 +106,7 @@ export function FeaturesScreen() {
           </ScopeCtx.Provider>
         )}
         {tab === "quickreplies" && (
-          <ScopeCtx.Provider value={{ scope, setScope }}>
+          <ScopeCtx.Provider value={{ scope: effectiveScope, setScope }}>
             <div className="flex-1 overflow-auto p-6">
               <div className="space-y-4">
                 <h1 className="text-xl font-semibold">Quick replies</h1>
@@ -116,7 +124,7 @@ export function FeaturesScreen() {
           </ScopeCtx.Provider>
         )}
         {tab === "tweaks" && (
-          <ScopeCtx.Provider value={{ scope, setScope }}>
+          <ScopeCtx.Provider value={{ scope: effectiveScope, setScope }}>
             <div className="flex-1 overflow-auto p-6">
               <div className="space-y-4">
                 <h1 className="text-xl font-semibold">Tweaks</h1>

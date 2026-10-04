@@ -211,13 +211,13 @@ interface LoadedChunk {
 }
 
 /**
- * Whether a stored chunk may be used to answer for `account`. Global chunks (account null) apply to
- * every account; an account's chunks apply to that account only. `account = null` (the settings
- * preview with "All accounts" selected) sees global chunks only. This mirrors candidateChunks' SQL
- * filter and is a second guard so a chunk can never leak into another account's reply.
+ * Whether a stored chunk may be used to answer for `account`. Entries are per account now, so a
+ * chunk only answers for the exact account it belongs to; an unowned chunk (account null, legacy)
+ * is visible to no one. This mirrors candidateChunks' SQL filter and is a second guard so a chunk
+ * can never leak into another account's reply.
  */
 export function chunkVisibleTo(chunkAccount: string | null, account: string | null): boolean {
-  return chunkAccount === null || chunkAccount === account;
+  return chunkAccount !== null && chunkAccount === account;
 }
 
 /**
@@ -232,8 +232,8 @@ export function invalidateKbCache() {
   vecCache = null;
 }
 
-async function loadedChunks(account: string | null, model: string): Promise<LoadedChunk[]> {
-  const key = `${model}|${account ?? ""}`;
+async function loadedChunks(account: string, model: string): Promise<LoadedChunk[]> {
+  const key = `${model}|${account}`;
   if (vecCache && vecCache.key === key && Date.now() - vecCache.at < VEC_CACHE_TTL_MS) return vecCache.rows;
   const rows = await candidateChunks(account, model);
   const parsed = rows.map((r) => ({
@@ -299,11 +299,11 @@ export async function reindexAll(account?: string): Promise<{ indexed: number; f
 }
 
 /**
- * The most relevant knowledge chunks for `account` (global entries included). Throws when the
- * embedding call fails — callers that must not break (the auto-reply runner) should catch.
+ * The most relevant knowledge chunks for `account`. Throws when the embedding call fails — callers
+ * that must not break (the auto-reply runner) should catch.
  */
 export async function retrieveKnowledge(
-  account: string | null,
+  account: string,
   query: string,
   opts: { k?: number; minScore?: number } = {},
 ): Promise<RankedChunk[]> {

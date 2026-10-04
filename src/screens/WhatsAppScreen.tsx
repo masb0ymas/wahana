@@ -1029,6 +1029,14 @@ function Conversation({
     });
   };
 
+  // Sending our own message pulls the view to the newest even if the user had scrolled up.
+  const scrollToLatest = useCallback(() => {
+    atBottom.current = true;
+    anchor.current = null;
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
   return (
     <>
       <div className="flex-1 min-w-0 flex flex-col bg-[#efeae2] dark:bg-neutral-950">
@@ -1208,6 +1216,7 @@ function Conversation({
             editing={editing}
             onCancelReply={() => setReplyTo(null)}
             onCancelEdit={() => setEditing(null)}
+            onSent={scrollToLatest}
           />
         )}
         {menu && (
@@ -1736,6 +1745,7 @@ function Composer({
   editing,
   onCancelReply,
   onCancelEdit,
+  onSent,
 }: {
   account: NativeAccount;
   chatId: string;
@@ -1754,6 +1764,8 @@ function Composer({
   editing: NativeMessage | null;
   onCancelReply: () => void;
   onCancelEdit: () => void;
+  /** Pull the view to the newest message after sending one. */
+  onSent: () => void;
 }) {
   // Unsent text is kept per chat, so switching away and back finds it again. Text loaded
   // for an edit is not a draft and is never saved.
@@ -1881,6 +1893,7 @@ function Composer({
   const sendSticker = async (webp: Blob) => {
     if (sending || !connected) return;
     setSending(true);
+    onSent();
     try {
       const sent = await nativeWa.sendMedia(account.id, chatId, webp, "sticker.webp", "", replyTo?.id ?? null, true);
       void cacheSentMedia(account.id, sent, webp);
@@ -1914,6 +1927,8 @@ function Composer({
     const draft = text.trim();
     if ((!draft && !attachment) || sending || !connected) return;
     stopTyping();
+    // A new message always belongs at the bottom; editing stays where the message is.
+    if (!editing) onSent();
     // "Only when I reply": the receipt goes out right before our message.
     if (readReceiptsFor(nativeAccountKey(account.id)) === "on-reply") void nativeWa.sendReceipt(account.id, chatId).catch(() => {});
     setSending(true);

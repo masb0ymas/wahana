@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { Bell, Palette, DatabaseBackup, HardDrive, Image as ImageIcon, Info, Sparkles } from "lucide-react";
+import { Bell, Palette, DatabaseBackup, HardDrive, Info, Sparkles } from "lucide-react";
 import { usingFallback } from "@/lib/secrets";
 import { OpenCtx, Section } from "./settings/shared";
 import { AppearanceSection } from "./settings/AppearanceSection";
-import { MediaSection } from "./settings/MediaSection";
 import { StorageSection } from "./settings/StorageSection";
 import { AiSection } from "./settings/AiSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
@@ -20,7 +19,7 @@ function loadOpen(): string[] {
     return DEFAULT_OPEN;
   }
 }
-const ALL_SECTIONS = ["Appearance", "Media", "Storage", "AI", "Notifications", "Backup & restore", "About"];
+const ALL_SECTIONS = ["Appearance", "Storage", "AI", "Notifications", "Backup & restore", "About"];
 
 export function SettingsScreen() {
   const [open, setOpen] = useState<string[]>(loadOpen);
@@ -51,13 +50,6 @@ export function SettingsScreen() {
           )}
           <Section icon={Palette} title="Appearance">
             <AppearanceSection />
-          </Section>
-          <Section
-            icon={ImageIcon}
-            title="Media"
-            description="Choose what downloads automatically. Disabled kinds show a blurred preview until you click them — saves bandwidth and server work."
-          >
-            <MediaSection />
           </Section>
           <Section
             icon={HardDrive}

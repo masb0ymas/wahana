@@ -113,6 +113,7 @@ const PREF_KEYS: (keyof Prefs)[] = [
   "autoReplyManualQuietMin",
   "sendTypingByAccount",
   "readReceiptsByAccount",
+  "mediaByAccount",
   "aiPersonaByAccount",
 ];
 

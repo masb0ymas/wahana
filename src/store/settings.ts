@@ -13,6 +13,14 @@ function store() {
 /** When read receipts (blue ticks) are sent. */
 export type ReadReceipts = "always" | "on-reply" | "manual" | "never";
 
+/** The four auto-download switches; also the shape of a per-account override. */
+export interface MediaPrefs {
+  autoLoadImages: boolean;
+  autoLoadStickers: boolean;
+  autoLoadVideos: boolean;
+  autoLoadAudio: boolean;
+}
+
 /** Global preferences persisted in the plain store file. */
 export interface Prefs {
   notifications: boolean;
@@ -71,6 +79,8 @@ export interface Prefs {
   // above; that default is not editable from a scope of its own anymore.
   sendTypingByAccount: Record<string, boolean>;
   readReceiptsByAccount: Record<string, ReadReceipts>;
+  /** Auto-download media per account; a missing kind falls back to the built-in default above. */
+  mediaByAccount: Record<string, Partial<MediaPrefs>>;
   /** Persona per account; missing or empty = use aiSystemPrompt. */
   aiPersonaByAccount: Record<string, string>;
 }
@@ -106,6 +116,7 @@ const DEFAULT_PREFS: Prefs = {
   autoReplyManualQuietMin: 15,
   sendTypingByAccount: {},
   readReceiptsByAccount: {},
+  mediaByAccount: {},
   aiPersonaByAccount: {},
 };
 
@@ -184,8 +195,15 @@ export const useReadReceipts = (account: string | null): ReadReceipts =>
 export const useSendTyping = (account: string | null): boolean =>
   useSettings((s) => (account ? s.sendTypingByAccount[account] : undefined) ?? s.sendTyping);
 
+/** Effective auto-download prefs for an account (per-kind fallback to the built-in default). */
+export const useMediaPrefs = (account: string | null): MediaPrefs => ({
+  autoLoadImages: useSettings((s) => (account ? s.mediaByAccount[account]?.autoLoadImages : undefined) ?? s.autoLoadImages),
+  autoLoadStickers: useSettings((s) => (account ? s.mediaByAccount[account]?.autoLoadStickers : undefined) ?? s.autoLoadStickers),
+  autoLoadVideos: useSettings((s) => (account ? s.mediaByAccount[account]?.autoLoadVideos : undefined) ?? s.autoLoadVideos),
+  autoLoadAudio: useSettings((s) => (account ? s.mediaByAccount[account]?.autoLoadAudio : undefined) ?? s.autoLoadAudio),
+});
+
 export type MediaKind = "image" | "sticker" | "video" | "audio" | "document";
-export type MediaPrefs = Pick<Prefs, "autoLoadImages" | "autoLoadStickers" | "autoLoadVideos" | "autoLoadAudio">;
 
 /**
  * Classify message media. Stickers are image/webp on the wire, so they are

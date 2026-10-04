@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useAccounts } from "@/lib/account";
 import { AccountScopePicker, ScopeCtx } from "./settings/shared";
 import { TweaksSection } from "./settings/TweaksSection";
+import { MediaSection } from "./settings/MediaSection";
 import { QuickRepliesSection } from "./settings/QuickRepliesSection";
 import { KnowledgeSection } from "./settings/KnowledgeSection";
 import { SchedulerScreen } from "./SchedulerScreen";
@@ -136,6 +137,10 @@ export function FeaturesScreen() {
                 </div>
                 <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 py-4 space-y-4">
                   <TweaksSection />
+                </div>
+                <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 py-4 space-y-4">
+                  <div className="text-sm font-medium">Media auto-download</div>
+                  <MediaSection />
                 </div>
               </div>
             </div>

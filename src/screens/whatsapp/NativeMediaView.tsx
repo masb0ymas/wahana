@@ -4,10 +4,11 @@ import { Download, FileText, Loader2, Maximize, Mic, Music, Play } from "lucide-
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { Lightbox } from "@/components/Lightbox";
+import { nativeAccountKey } from "@/lib/account";
 import { cacheGet, cachePut, formatBytes, mediaCacheKey, type CacheMeta } from "@/lib/mediaCache";
 import { nativeWa, type NativeMessage } from "@/lib/nativeWa";
 import { cn, errMsg } from "@/lib/utils";
-import { shouldAutoLoad, useSettings } from "@/store/settings";
+import { shouldAutoLoad, useMediaPrefs } from "@/store/settings";
 import { useWhatsApp } from "@/store/whatsapp";
 
 /**
@@ -71,11 +72,7 @@ export function NativeMediaView({
   tile?: boolean;
 }) {
   const media = m.media!;
-  const autoLoadImages = useSettings((s) => s.autoLoadImages);
-  const autoLoadStickers = useSettings((s) => s.autoLoadStickers);
-  const autoLoadVideos = useSettings((s) => s.autoLoadVideos);
-  const autoLoadAudio = useSettings((s) => s.autoLoadAudio);
-  const prefs = { autoLoadImages, autoLoadStickers, autoLoadVideos, autoLoadAudio };
+  const prefs = useMediaPrefs(nativeAccountKey(accountId));
   const playable = media.kind === "ptt" ? "audio" : media.kind;
   const auto = media.kind !== "document" && shouldAutoLoad(playable as "image" | "video" | "audio" | "sticker", prefs);
   const [wanted, setWanted] = useState(false);

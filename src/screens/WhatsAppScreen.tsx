@@ -331,6 +331,7 @@ function ChatList({
   const [relabel, setRelabel] = useState(0);
   const [selecting, setSelecting] = useState(false);
   const [following, setFollowing] = useState(false);
+  const [newChat, setNewChat] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -585,6 +586,15 @@ function ChatList({
                 <CheckCheck size={12} /> Read all
               </button>
             )}
+            {!selecting && (
+              <button
+                onClick={() => setNewChat(true)}
+                title="Start a chat with a phone number"
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
+              >
+                <Plus size={12} /> New chat
+              </button>
+            )}
             <button
               onClick={() => (selecting ? exitSelect() : setSelecting(true))}
               title="Select chats"
@@ -672,6 +682,7 @@ function ChatList({
         )}
       </div>
       {following && <NativeFollowChannel accountId={account.id} onFollowed={(id) => onSelect(id)} onClose={() => setFollowing(false)} />}
+      {newChat && <NewChatDialog chats={chats} onOpen={onSelect} onClose={() => setNewChat(false)} />}
       {menu && (
         <RowMenu
           accountId={account.id}
@@ -1835,6 +1846,101 @@ const Bubble = memo(function Bubble({
     </div>
   );
 });
+
+/** Start a chat: pick a chat you already have, or type a phone number with its country code (no "+" needed). */
+function NewChatDialog({ chats, onOpen, onClose }: { chats: NativeChat[]; onOpen: (id: string) => void; onClose: () => void }) {
+  const [value, setValue] = useState("");
+  const digits = value.replace(/\D/g, "");
+  const term = value.trim().toLowerCase();
+  const contacts = chats
+    .filter((c) => c.id !== "status@broadcast" && !isChannel(c.id))
+    .filter((c) => !term || (c.name ?? "").toLowerCase().includes(term) || (c.phone ?? "").includes(term) || c.id.includes(term))
+    .slice(0, 50);
+  // A chat we already know for this number may live under its privacy id (@lid).
+  const known =
+    digits.length >= 8
+      ? chats.find((c) => c.id === `${digits}@s.whatsapp.net` || (c.phone && c.phone.replace(/\D/g, "") === digits))
+      : undefined;
+  const start = (id: string) => {
+    onOpen(id);
+    onClose();
+  };
+  const startNumber = () => {
+    if (digits.length >= 8) start(known?.id ?? `${digits}@s.whatsapp.net`);
+  };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          startNumber();
+        }}
+        className="w-[380px] max-h-[70vh] flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl"
+      >
+        <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
+          <span className="font-semibold flex-1">Start chat</span>
+          <button type="button" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-2 relative">
+          <Search size={14} className="absolute left-4 top-4.5 text-neutral-400" />
+          <Input
+            className="pl-8"
+            inputMode="tel"
+            placeholder="Search or type a number"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {digits.length >= 8 && !known && (
+            <button
+              type="button"
+              onClick={startNumber}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            >
+              <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full bg-wa/15 text-wa-dark dark:text-wa">
+                <Plus size={14} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">Start chat</span>
+                <span className="block text-xs text-neutral-500">+{digits}</span>
+              </span>
+            </button>
+          )}
+          {contacts.map((c) => {
+            const name = c.name || displayId(c.id);
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => start(c.id)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              >
+                <Avatar name={name} size={30} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{name}</span>
+                  {c.phone && <span className="block text-xs text-neutral-500">{c.phone}</span>}
+                </span>
+              </button>
+            );
+          })}
+          {contacts.length === 0 && digits.length < 8 && <p className="px-3 py-2 text-xs text-neutral-500">No chats found.</p>}
+        </div>
+        <div className="flex justify-end gap-2 p-3 border-t border-neutral-200 dark:border-neutral-800">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={digits.length < 8}>
+            Start chat
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 /** Forward a stored message to another chat of the same account. */
 function NativeForwardDialog({

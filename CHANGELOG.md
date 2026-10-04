@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.7 — 2026-10-04
+
+### Added
+
+- Tell your linked accounts apart: assign each one a colour and an emoji icon on the Accounts screen. The Chats badge now shows one small badge per account with unread, coloured by that account, instead of a single combined number; the tray tooltip lists unread per account; notifications carry the account's icon; and the account picker and multi-account tiles show the icon and colour. Accounts you have not styled get a stable automatic colour.
+- Check for updates by hand from Settings → About, with the result shown inline (up to date / available / error) and an install action when one is found.
+
+### Changed
+
+- Media auto-download (images, stickers, videos, audio) is set per account under Features → Tweaks ("Apply to"), instead of one global switch; accounts without an override keep the built-in default, and the settings are included in backups.
+
 ## 1.1.6 — 2026-10-04
 
 ### Added

@@ -1424,6 +1424,7 @@ function Conversation({
           <NativeMessageInfo
             accountId={account.id}
             message={infoFor}
+            connected={connected}
             onClose={() => setInfoFor(null)}
             onOpenChat={(ids) => onOpenChat(ids)}
           />

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Check, CheckCheck, Loader2, X } from "lucide-react";
 import { nativeWa, type NativeMessage, type NativeReceipt } from "@/lib/nativeWa";
 import { cn, errMsg, isGroup } from "@/lib/utils";
+import { Avatar } from "@/components/ui";
+import { usePicture } from "@/screens/whatsapp/usePicture";
 
 const fmt = (ms: number) =>
   new Date(ms).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -10,11 +12,14 @@ const fmt = (ms: number) =>
 export function NativeMessageInfo({
   accountId,
   message: m,
+  connected,
   onClose,
   onOpenChat,
 }: {
   accountId: string;
   message: NativeMessage;
+  /** Whether the account is connected; profile pictures need it. */
+  connected: boolean;
   onClose: () => void;
   /** Open the direct chat with a recipient who read or received this message. */
   onOpenChat?: (ids: string[]) => void;
@@ -99,17 +104,19 @@ export function NativeMessageInfo({
           {rows && group && (
             <>
               <Section
+                accountId={accountId}
+                connected={connected}
                 title="Read by"
                 rows={rows.filter((r) => r.readAt)}
                 at={(r) => r.readAt}
-                icon={blue}
                 onRowClick={onOpenChat ? openChat : undefined}
               />
               <Section
+                accountId={accountId}
+                connected={connected}
                 title="Delivered to"
                 rows={rows.filter((r) => r.deliveredAt && !r.readAt)}
                 at={(r) => r.deliveredAt}
-                icon={grey}
                 onRowClick={onOpenChat ? openChat : undefined}
               />
               {rows.length === 0 && (
@@ -127,16 +134,18 @@ export function NativeMessageInfo({
 }
 
 function Section({
+  accountId,
+  connected,
   title,
   rows,
   at,
-  icon,
   onRowClick,
 }: {
+  accountId: string;
+  connected: boolean;
   title: string;
   rows: NativeReceipt[];
   at: (r: NativeReceipt) => number | null;
-  icon: React.ReactNode;
   onRowClick?: (r: NativeReceipt) => void;
 }) {
   if (rows.length === 0) return null;
@@ -146,27 +155,45 @@ function Section({
       <div className="text-xs font-medium text-neutral-500 mb-1">
         {title} ({rows.length})
       </div>
-      {ordered.map((r) => {
-        const body = (
-          <>
-            <div className="truncate">{r.name}</div>
-            {r.phone && r.phone !== r.name && <div className="truncate text-xs text-neutral-500">{r.phone}</div>}
-          </>
-        );
-        return (
-          <div key={r.id} className="flex items-center gap-2 py-1 text-sm">
-            {icon}
-            {onRowClick ? (
-              <button type="button" title="Open chat" onClick={() => onRowClick(r)} className="flex-1 min-w-0 text-left hover:underline">
-                {body}
-              </button>
-            ) : (
-              <div className="flex-1 min-w-0">{body}</div>
-            )}
-            <span className="text-xs text-neutral-500">{at(r) ? fmt(at(r)!) : ""}</span>
-          </div>
-        );
-      })}
+      {ordered.map((r) => (
+        <ReceiptRow key={r.id} accountId={accountId} connected={connected} r={r} at={at} onRowClick={onRowClick} />
+      ))}
+    </div>
+  );
+}
+
+function ReceiptRow({
+  accountId,
+  connected,
+  r,
+  at,
+  onRowClick,
+}: {
+  accountId: string;
+  connected: boolean;
+  r: NativeReceipt;
+  at: (r: NativeReceipt) => number | null;
+  onRowClick?: (r: NativeReceipt) => void;
+}) {
+  const picture = usePicture(accountId, r.id, connected);
+  const time = at(r);
+  const body = (
+    <>
+      <div className="truncate">{r.name}</div>
+      {r.phone && r.phone !== r.name && <div className="truncate text-xs text-neutral-500">{r.phone}</div>}
+    </>
+  );
+  return (
+    <div className="flex items-center gap-2 py-1 text-sm">
+      <Avatar src={picture ?? undefined} name={r.name} size={30} />
+      {onRowClick ? (
+        <button type="button" title="Open chat" onClick={() => onRowClick(r)} className="flex-1 min-w-0 text-left hover:underline">
+          {body}
+        </button>
+      ) : (
+        <div className="flex-1 min-w-0">{body}</div>
+      )}
+      <span className="text-xs text-neutral-500">{time ? fmt(time) : ""}</span>
     </div>
   );
 }

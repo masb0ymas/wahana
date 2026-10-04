@@ -1,0 +1,23 @@
+# Only the WhatsApp client crates are tracked here. They follow the WhatsApp Web
+# protocol, which can change server-side at any time, so falling behind can break
+# login or messaging for every user. Everything else is left alone to keep the PR
+# queue quiet; security alerts cover the rest.
+#
+# The two crates are versioned in lockstep and must move together, hence the group.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: whatsapp-rust
+      - dependency-name: whatsapp-rust-sqlite-storage
+    groups:
+      whatsapp-rust:
+        patterns:
+          - whatsapp-rust*
+    commit-message:
+      prefix: deps
+    labels:
+      - dependencies

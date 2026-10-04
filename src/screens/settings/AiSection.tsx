@@ -1,7 +1,7 @@
 import { Toggle } from "./shared";
 import { useEffect, useState } from "react";
 import { CheckCircle2, ChevronDown, Loader2, XCircle } from "lucide-react";
-import { DEFAULT_MODELS, LANGUAGES, embedOne, testAi } from "@/lib/ai";
+import { LANGUAGES, embedOne, testAi } from "@/lib/ai";
 import { useSettings } from "@/store/settings";
 import { useAccounts } from "@/lib/account";
 import { Button, Input, Label } from "@/components/ui";
@@ -9,7 +9,6 @@ import { errMsg } from "@/lib/utils";
 
 export function AiSection() {
   const s = useSettings();
-  const [provider, setProvider] = useState(s.aiProvider);
   const [baseUrl, setBaseUrl] = useState(s.aiBaseUrl);
   const [model, setModel] = useState(s.aiModel);
   const [fastModel, setFastModel] = useState(s.aiFastModel);
@@ -22,7 +21,6 @@ export function AiSection() {
   const [busy, setBusy] = useState<"test" | "save" | null>(null);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => {
-    setProvider(s.aiProvider);
     setBaseUrl(s.aiBaseUrl);
     setModel(s.aiModel);
     setFastModel(s.aiFastModel);
@@ -33,7 +31,6 @@ export function AiSection() {
     setKey(s.aiApiKey);
     setPersona(s.aiSystemPrompt);
   }, [
-    s.aiProvider,
     s.aiBaseUrl,
     s.aiModel,
     s.aiFastModel,
@@ -45,7 +42,6 @@ export function AiSection() {
     s.aiSystemPrompt,
   ]);
   const dirty =
-    provider !== s.aiProvider ||
     baseUrl.trim() !== s.aiBaseUrl ||
     model.trim() !== s.aiModel ||
     fastModel.trim() !== s.aiFastModel ||
@@ -55,7 +51,7 @@ export function AiSection() {
     embedKey.trim() !== s.aiEmbedApiKey ||
     key.trim() !== s.aiApiKey ||
     persona.trim() !== s.aiSystemPrompt;
-  const cfg = { provider, baseUrl: baseUrl.trim(), model: model.trim() || DEFAULT_MODELS[provider], apiKey: key.trim() };
+  const cfg = { baseUrl: baseUrl.trim(), model: model.trim(), apiKey: key.trim() };
   const embedCfg = embedSame
     ? { baseUrl: cfg.baseUrl, model: embedModel.trim(), apiKey: cfg.apiKey }
     : { baseUrl: embedBaseUrl.trim().replace(/\/+$/, ""), model: embedModel.trim(), apiKey: embedKey.trim() };
@@ -63,50 +59,13 @@ export function AiSection() {
   return (
     <>
       <div>
-        <Label>Provider</Label>
-        <div className="flex gap-1">
-          {(
-            [
-              ["anthropic", "Anthropic (Claude)"],
-              ["openai-compatible", "OpenAI-compatible"],
-            ] as const
-          ).map(([id, label]) => (
-            <Button
-              key={id}
-              size="sm"
-              variant={provider === id ? "primary" : "secondary"}
-              onClick={() => {
-                setProvider(id);
-                if (!model || model === DEFAULT_MODELS[provider]) setModel(DEFAULT_MODELS[id]);
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <Label>
-          {provider === "anthropic"
-            ? "Base URL (optional — leave empty for api.anthropic.com)"
-            : "Base URL (e.g. https://api.tokenrouter.com/v1)"}
-        </Label>
-        <Input
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder={provider === "anthropic" ? "https://api.anthropic.com" : "https://…/v1"}
-          spellCheck={false}
-        />
+        <Label>Base URL (optional — leave empty for api.openai.com/v1)</Label>
+        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" spellCheck={false} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label>Model</Label>
-          <Input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder={provider === "anthropic" ? "claude-opus-5" : "e.g. gpt-4.1-mini, llama3"}
-            spellCheck={false}
-          />
+          <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. gpt-4.1-mini, llama3" spellCheck={false} />
         </div>
         <div>
           <Label>API key</Label>
@@ -118,7 +77,7 @@ export function AiSection() {
         <Input
           value={fastModel}
           onChange={(e) => setFastModel(e.target.value)}
-          placeholder={provider === "anthropic" ? "claude-haiku-4-5" : "e.g. gpt-4.1-nano, llama3.2"}
+          placeholder="e.g. gpt-4.1-nano, llama3.2"
           spellCheck={false}
         />
         <p className="text-[11px] text-neutral-500 mt-1">
@@ -154,11 +113,6 @@ export function AiSection() {
             <Label>Embedding API key</Label>
             <Input type="password" value={embedKey} onChange={(e) => setEmbedKey(e.target.value)} placeholder="sk-…" />
           </div>
-        </div>
-      )}
-      {embedSame && provider === "anthropic" && !!embedModel.trim() && (
-        <div className="text-[11px] text-amber-700 dark:text-amber-300">
-          Anthropic serves no embeddings API — uncheck the box to point embeddings at a separate OpenAI-compatible endpoint.
         </div>
       )}
       <p className="text-[11px] text-neutral-500">
@@ -237,7 +191,7 @@ export function AiSection() {
       <div className="flex gap-2">
         <Button
           variant="secondary"
-          disabled={busy !== null || !cfg.apiKey || !cfg.model || (provider !== "anthropic" && !cfg.baseUrl)}
+          disabled={busy !== null || !cfg.apiKey || !cfg.model}
           onClick={async () => {
             setBusy("test");
             setResult(null);
@@ -269,7 +223,6 @@ export function AiSection() {
             setBusy("save");
             try {
               await s.save({
-                aiProvider: provider,
                 aiBaseUrl: cfg.baseUrl,
                 aiModel: cfg.model,
                 aiFastModel: fastModel.trim(),

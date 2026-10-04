@@ -69,7 +69,7 @@ export function SettingsScreen() {
           <Section
             icon={Sparkles}
             title="AI"
-            description="Bring your own model. Anthropic uses the official SDK; OpenAI-compatible works with routers (TokenRouter, OpenRouter, Groq), Ollama, etc. The key is stored in the OS keychain."
+            description="Bring your own model. Any OpenAI-compatible endpoint works: OpenAI, routers (OpenRouter, Groq), Ollama, etc. The key is stored in the OS keychain."
           >
             <AiSection />
           </Section>

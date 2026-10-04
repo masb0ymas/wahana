@@ -95,7 +95,6 @@ const PREF_KEYS: (keyof Prefs)[] = [
   "linkPreviews",
   "sendTyping",
   "readReceipts",
-  "aiProvider",
   "aiBaseUrl",
   "aiModel",
   "aiFastModel",

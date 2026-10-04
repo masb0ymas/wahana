@@ -36,7 +36,6 @@ export interface Prefs {
   /** Rows of the multi-account grid view visible at once (extra accounts scroll). */
   gridRows: number;
   // ── AI ──
-  aiProvider: "anthropic" | "openai-compatible";
   aiBaseUrl: string;
   aiModel: string;
   /** Cheaper/faster model for short tasks (translate, rewrite, smart replies); empty = use aiModel. */
@@ -51,7 +50,7 @@ export interface Prefs {
   aiAutoLabel: boolean;
   /** Whether embeddings use the chat endpoint/key (true) or their own below (false). */
   aiEmbedSameAsChat: boolean;
-  /** OpenAI-compatible base URL for embeddings when they are not the chat one. Anthropic has no embeddings API. */
+  /** OpenAI-compatible base URL for embeddings when they are not the chat one. */
   aiEmbedBaseUrl: string;
   /** Embedding model for the knowledge base (empty = knowledge base disabled). */
   aiEmbedModel: string;
@@ -89,7 +88,6 @@ const DEFAULT_PREFS: Prefs = {
   chatTabOrder: ["all", "unread", "private", "groups", "community", "channels"],
   gridColumns: 3,
   gridRows: 2,
-  aiProvider: "openai-compatible",
   aiBaseUrl: "",
   aiModel: "",
   aiFastModel: "",

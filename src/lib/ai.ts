@@ -1,18 +1,14 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { activeAccountKey } from "@/lib/account";
 import { useSettings } from "@/store/settings";
 
-export type AiProvider = "anthropic" | "openai-compatible";
-
 export interface AiConfig {
-  provider: AiProvider;
-  baseUrl: string; // OpenAI-compatible: required; Anthropic: optional override
+  /** OpenAI-compatible base URL; empty = the SDK default (api.openai.com/v1). */
+  baseUrl: string;
   model: string;
   apiKey: string;
 }
-
-export const DEFAULT_MODELS: Record<AiProvider, string> = { anthropic: "claude-opus-5", "openai-compatible": "" };
 
 /** Hard ceiling per request: a hung provider must not wedge callers (auto-reply keeps a per-chat in-flight lock). */
 export const AI_TIMEOUT_MS = 60_000;
@@ -43,13 +39,73 @@ export const langName = (code: string) => LANGUAGES.find(([c]) => c === code)?.[
 
 function config(fast = false): AiConfig {
   const s = useSettings.getState();
-  const model = (fast && s.aiFastModel.trim()) || s.aiModel || DEFAULT_MODELS[s.aiProvider];
-  return { provider: s.aiProvider, baseUrl: s.aiBaseUrl, model, apiKey: s.aiApiKey };
+  const model = (fast && s.aiFastModel.trim()) || s.aiModel;
+  return { baseUrl: s.aiBaseUrl, model, apiKey: s.aiApiKey };
+}
+
+/** An OpenAI client for a config: Tauri's HTTP (no webview CORS) with a hard per-request timeout. */
+function client(c: AiConfig) {
+  return new OpenAI({
+    apiKey: c.apiKey,
+    baseURL: c.baseUrl.trim() || undefined,
+    fetch: tauriFetch as unknown as typeof fetch,
+    dangerouslyAllowBrowser: true,
+    maxRetries: 1,
+    timeout: AI_TIMEOUT_MS,
+  });
 }
 
 export function aiConfigured() {
   const c = config();
-  return !!c.apiKey && !!c.model && (c.provider === "anthropic" || !!c.baseUrl);
+  return !!c.apiKey && !!c.model;
+}
+
+/**
+ * Reasoning models (gpt-5, o-series, deepseek-r1, GLM-5…) spend the completion budget on internal
+ * thinking first and count it inside that budget, so a budget sized for the answer alone comes back
+ * empty with `finish_reason: "length"`. They also take `max_completion_tokens` rather than `max_tokens`.
+ */
+const REASONING_MODEL = /^(gpt-5|o[134]|deepseek-r|qwq|glm-5)/i;
+const isReasoningModel = (model: string) => REASONING_MODEL.test(model);
+
+/** A model that answered with no text (usually a reasoning model whose budget ran out) is a failure, not a blank result. */
+function noText(model: string, reason: string | null | undefined): Error {
+  const why = reason === "length" ? " — the token budget ran out before any visible output (typical of reasoning models)" : "";
+  return new Error(
+    `The model (${model}) returned no text${why} [finish_reason: ${reason ?? "unknown"}]. Increase the token limit or set a non-reasoning model.`,
+  );
+}
+
+/**
+ * One chat completion. Known reasoning models get thinking headroom and `max_completion_tokens`; any
+ * other model that answers with no text is retried once the same way (its name may not say it reasons).
+ */
+async function chat(c: AiConfig, messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[], maxTokens: number): Promise<string> {
+  const cl = client(c);
+  const send = (reasoning: boolean) =>
+    cl.chat.completions.create(
+      {
+        model: c.model,
+        messages,
+        ...(reasoning ? { max_completion_tokens: Math.max(maxTokens, 2048) } : { max_tokens: maxTokens, temperature: 0.2 }),
+      },
+      { signal: AbortSignal.timeout(AI_TIMEOUT_MS) },
+    );
+  const reasoning = isReasoningModel(c.model);
+  let res = await send(reasoning);
+  let reason = res.choices[0]?.finish_reason;
+  let text = (res.choices[0]?.message?.content ?? "").trim();
+  if (!text && !reasoning) {
+    try {
+      res = await send(true);
+      reason = res.choices[0]?.finish_reason;
+      text = (res.choices[0]?.message?.content ?? "").trim();
+    } catch {
+      /* best-effort retry: fall through and report the first empty result */
+    }
+  }
+  if (!text) throw noText(c.model, reason);
+  return text;
 }
 
 /** The persona text that applies to an account (its override from Settings → AI, else the default persona). */
@@ -79,65 +135,14 @@ export async function complete(
   const maxTokens = opts.maxTokens ?? 4096;
   if (opts.persona !== false) system = personaPreamble(opts.account) + system;
 
-  if (c.provider === "anthropic") {
-    const client = new Anthropic({
-      apiKey: c.apiKey,
-      baseURL: c.baseUrl.trim() || undefined,
-      fetch: tauriFetch as unknown as typeof fetch, // bypass webview CORS
-      dangerouslyAllowBrowser: true,
-      maxRetries: 1,
-      timeout: AI_TIMEOUT_MS,
-    });
-    const res = await client.messages.create(
-      {
-        model: c.model,
-        max_tokens: maxTokens,
-        system,
-        messages: [{ role: "user", content: user }],
-        output_config: { effort: "low" },
-      },
-      { signal: AbortSignal.timeout(AI_TIMEOUT_MS) },
-    );
-    if (res.stop_reason === "refusal") throw new Error("The model declined this request.");
-    return res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("")
-      .trim();
-  }
-
-  // OpenAI-compatible chat completions (routers, Ollama, etc.)
-  const base = c.baseUrl.replace(/\/+$/, "");
-  const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
-  const res = await tauriFetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${c.apiKey}` },
-    body: JSON.stringify({
-      model: c.model,
-      max_tokens: maxTokens,
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
-    try {
-      const j = JSON.parse(text) as { error?: { message?: string } | string; message?: string };
-      msg = (typeof j.error === "string" ? j.error : j.error?.message) ?? j.message ?? msg;
-    } catch {
-      /* keep */
-    }
-    throw new Error(msg);
-  }
-  const j = JSON.parse(text) as { choices?: { message?: { content?: string | { text?: string }[] } }[] };
-  const content = j.choices?.[0]?.message?.content;
-  const out = typeof content === "string" ? content : (content ?? []).map((p) => p.text ?? "").join("");
-  return out.trim();
+  return chat(
+    c,
+    [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    maxTokens,
+  );
 }
 
 const TRANSLATE_CACHE_MAX = 500;
@@ -169,8 +174,8 @@ export async function testAi(cfg: AiConfig) {
 }
 
 // ── Embeddings (knowledge base) ────────────────────────────────────────────
-// Anthropic serves no embeddings API, so this always talks to an OpenAI-compatible
-// `/embeddings` endpoint (OpenAI, a router, or Ollama).
+// Embeddings use the provider's OpenAI-compatible `/embeddings` endpoint (OpenAI,
+// a router, or Ollama).
 
 export interface EmbedConfig {
   baseUrl: string;
@@ -194,12 +199,8 @@ export function embedConfig(): EmbedConfig {
 
 /** Why the knowledge base cannot embed right now, or null when it can. */
 export function embedConfigIssue(): string | null {
-  const s = useSettings.getState();
   const c = embedConfig();
   if (!c.model) return "Set an embedding model in Settings → AI to index and use the knowledge base.";
-  if (s.aiEmbedSameAsChat && s.aiProvider === "anthropic")
-    return 'Anthropic serves no embeddings API — in Settings → AI, uncheck "Same endpoint & key as chat" and set an OpenAI-compatible embeddings endpoint.';
-  if (!c.baseUrl) return "Set the embedding base URL in Settings → AI.";
   if (!c.apiKey) return "Set the embedding API key in Settings → AI.";
   return null;
 }
@@ -212,33 +213,15 @@ export function embedConfigured() {
 export async function embed(texts: string[], cfg = embedConfig()): Promise<number[][]> {
   if (!cfg.apiKey) throw new Error("AI API key is not set (Settings → AI).");
   if (!cfg.model) throw new Error("Embedding model is not set (Settings → AI).");
-  if (!cfg.baseUrl) throw new Error("Embedding base URL is not set (Settings → AI).");
-  const url = /\/embeddings$/.test(cfg.baseUrl) ? cfg.baseUrl : `${cfg.baseUrl}/embeddings`;
+  const c = client(cfg);
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += 32) {
     const input = texts.slice(i, i + 32);
-    const res = await tauriFetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
-      body: JSON.stringify({ model: cfg.model, input }),
-      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      let msg = `${res.status} ${res.statusText}`;
-      try {
-        const j = JSON.parse(text) as { error?: { message?: string } | string; message?: string };
-        msg = (typeof j.error === "string" ? j.error : j.error?.message) ?? j.message ?? msg;
-      } catch {
-        /* keep */
-      }
-      throw new Error(msg);
-    }
-    const j = JSON.parse(text) as { data?: { embedding?: number[]; index?: number }[] };
-    const rows = j.data ?? [];
+    const res = await c.embeddings.create({ model: cfg.model, input }, { signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
+    const rows = res.data;
     if (rows.length !== input.length) throw new Error(`Embeddings endpoint returned ${rows.length} vectors for ${input.length} inputs.`);
     // Providers are expected to preserve order, but sort by index when present to be safe.
-    const ordered = rows.every((r) => typeof r.index === "number") ? [...rows].sort((a, b) => a.index! - b.index!) : rows;
+    const ordered = rows.every((r) => typeof r.index === "number") ? [...rows].sort((a, b) => a.index - b.index) : rows;
     for (const r of ordered) {
       if (!Array.isArray(r.embedding) || r.embedding.length === 0) throw new Error("Embeddings endpoint returned an empty vector.");
       out.push(r.embedding);
@@ -342,84 +325,20 @@ export async function completeWithImage(
   const maxTokens = opts.maxTokens ?? 2048;
   system = personaPreamble(opts.account) + system;
 
-  if (c.provider === "anthropic") {
-    const client = new Anthropic({
-      apiKey: c.apiKey,
-      baseURL: c.baseUrl.trim() || undefined,
-      fetch: tauriFetch as unknown as typeof fetch,
-      dangerouslyAllowBrowser: true,
-      maxRetries: 1,
-      timeout: AI_TIMEOUT_MS,
-    });
-    const res = await client.messages.create(
+  return chat(
+    c,
+    [
+      { role: "system", content: system },
       {
-        model: c.model,
-        max_tokens: maxTokens,
-        system,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-                  data: image.data,
-                },
-              },
-              { type: "text", text: user },
-            ],
-          },
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.data}` } },
+          { type: "text", text: user },
         ],
-        output_config: { effort: "low" },
       },
-      { signal: AbortSignal.timeout(AI_TIMEOUT_MS) },
-    );
-    if (res.stop_reason === "refusal") throw new Error("The model declined this request.");
-    return res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("")
-      .trim();
-  }
-
-  const base = c.baseUrl.replace(/\/+$/, "");
-  const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
-  const res = await tauriFetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${c.apiKey}` },
-    body: JSON.stringify({
-      model: c.model,
-      max_tokens: maxTokens,
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: system },
-        {
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.data}` } },
-            { type: "text", text: user },
-          ],
-        },
-      ],
-    }),
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
-    try {
-      const j = JSON.parse(text) as { error?: { message?: string } | string; message?: string };
-      msg = (typeof j.error === "string" ? j.error : j.error?.message) ?? j.message ?? msg;
-    } catch {
-      /* keep */
-    }
-    throw new Error(msg);
-  }
-  const j = JSON.parse(text) as { choices?: { message?: { content?: string | { text?: string }[] } }[] };
-  const content = j.choices?.[0]?.message?.content;
-  return (typeof content === "string" ? content : (content ?? []).map((p) => p.text ?? "").join("")).trim();
+    ],
+    maxTokens,
+  );
 }
 
 /** Describe an image or extract its text. `language` = output language for descriptions (OCR keeps the source text as-is). */

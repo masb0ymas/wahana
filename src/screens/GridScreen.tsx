@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { AccountChatTile } from "@/components/AccountChatTile";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { Button } from "@/components/ui";
 import { useSettings } from "@/store/settings";
 import { useWhatsApp } from "@/store/whatsapp";
 
@@ -42,6 +43,9 @@ export function GridScreen() {
         <div className="ml-auto flex items-center gap-4">
           <Stepper label="Columns" value={columns} max={MAX_COLS} onChange={(v) => void useSettings.getState().save({ gridColumns: v })} />
           <Stepper label="Rows" value={rows} max={MAX_ROWS} onChange={(v) => void useSettings.getState().save({ gridRows: v })} />
+          <Button size="sm" variant="secondary" onClick={() => void add().catch(console.error)}>
+            <Plus size={14} /> Link account
+          </Button>
         </div>
       </div>
       {/* The scrollbar lives in the page's right padding (stable gutter, pulled out by -mr-2.5 =
@@ -63,14 +67,6 @@ export function GridScreen() {
                 <AccountChatTile account={a} />
               </ErrorBoundary>
             ))}
-            <button
-              type="button"
-              onClick={() => void add().catch(console.error)}
-              className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800/60"
-            >
-              <Plus size={20} />
-              Link a WhatsApp account
-            </button>
           </div>
         )}
       </div>

@@ -1243,11 +1243,10 @@ function Conversation({
           const f = e.dataTransfer.files[0];
           if (f) attach(f);
         }}
-        className={cn(
-          "relative flex-1 min-w-0 flex flex-col bg-[#efeae2] dark:bg-neutral-950",
-          dragging && "ring-2 ring-inset ring-wa-dark",
-        )}
+        className="relative flex-1 min-w-0 flex flex-col bg-[#efeae2] dark:bg-neutral-950"
       >
+        {/* Drawn above the header and composer, which would otherwise hide an inset ring. */}
+        {dragging && <div className="pointer-events-none absolute inset-0 z-20 ring-2 ring-inset ring-wa-dark" />}
         <header className="h-14 shrink-0 flex items-center gap-3 px-4 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800">
           {onBack && (
             <button

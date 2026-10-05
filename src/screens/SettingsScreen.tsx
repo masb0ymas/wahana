@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Bell, Palette, DatabaseBackup, HardDrive, Info, Sparkles } from "lucide-react";
+import { Bell, Palette, DatabaseBackup, HardDrive, Info, ShieldCheck, Sparkles } from "lucide-react";
 import { usingFallback } from "@/lib/secrets";
 import { OpenCtx, Section } from "./settings/shared";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { StorageSection } from "./settings/StorageSection";
 import { AiSection } from "./settings/AiSection";
 import { NotificationsSection } from "./settings/NotificationsSection";
+import { SecuritySection } from "./settings/SecuritySection";
 import { BackupSection } from "./settings/BackupSection";
 import { AboutSection } from "./settings/AboutSection";
 
@@ -19,7 +20,7 @@ function loadOpen(): string[] {
     return DEFAULT_OPEN;
   }
 }
-const ALL_SECTIONS = ["Appearance", "Storage", "AI", "Notifications", "Backup & restore", "About"];
+const ALL_SECTIONS = ["Appearance", "Storage", "AI", "Notifications", "Security", "Backup & restore", "About"];
 
 export function SettingsScreen() {
   const [open, setOpen] = useState<string[]>(loadOpen);
@@ -67,6 +68,13 @@ export function SettingsScreen() {
           </Section>
           <Section icon={Bell} title="Notifications">
             <NotificationsSection />
+          </Section>
+          <Section
+            icon={ShieldCheck}
+            title="Security"
+            description="Lock Wahana with a 4-digit PIN. The PIN is stored as a hash in the OS keychain."
+          >
+            <SecuritySection />
           </Section>
           <Section
             icon={DatabaseBackup}

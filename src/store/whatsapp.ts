@@ -23,6 +23,7 @@ import { useRevoked } from "@/store/revoked";
 import { notifyText } from "@/realtime/notify";
 import { useSettings } from "@/store/settings";
 import { useAccountStyle } from "@/store/accountStyle";
+import { useAppLock } from "@/store/appLock";
 
 /**
  * Native WhatsApp accounts (no server needed), driven by the Rust client. `active` is the
@@ -146,6 +147,11 @@ export const useWhatsApp = create<State>((set, get) => ({
           }),
         );
         if (!useSettings.getState().notifications) continue;
+        // While locked, never leak the sender or the message body into a notification.
+        if (useAppLock.getState().locked) {
+          void notifyText("Wahana is locked", "Open the app to view new messages.");
+          continue;
+        }
         if (document.hasFocus() && openChats[id] === m.chatId) continue;
         if (isMutedUntil(useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)])) continue;
         const accountName = accounts.length > 1 && account ? ` · ${account.name}` : "";

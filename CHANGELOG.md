@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- App lock: set a 4-digit PIN under Settings → Security and Wahana requires it before the UI opens. Lock on demand (a sidebar lock button), after inactivity (1–60 minutes), when the window is hidden to the tray, and/or on app start. The PIN is stored as a PBKDF2-SHA256 hash in the OS keychain, a wrong PIN backs off after five tries, incoming-message notifications are redacted while locked, and a forgotten PIN can be reset by typing RESET.
+
 ## 1.1.8 — 2026-10-05
 
 ### Added

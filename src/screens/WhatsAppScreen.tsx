@@ -7,6 +7,7 @@ import {
   BellOff,
   EyeOff,
   ChevronLeft,
+  ChevronRight,
   Languages,
   Loader2,
   Paperclip,
@@ -358,6 +359,28 @@ function ChatList({
   // Tabs are reordered by pointer (not HTML5 drag-and-drop, which Tauri's window drag-drop
   // handler breaks on Windows). Chips are found by ref to decide the drop slot.
   const chipRefs = useRef(new Map<Filter, HTMLButtonElement>());
+  const tabStripRef = useRef<HTMLDivElement>(null);
+  // Which way the filter strip can still scroll; drives the < > buttons beside it.
+  const [tabScroll, setTabScroll] = useState({ overflow: false, left: false, right: false });
+  const updateTabScroll = useCallback(() => {
+    const el = tabStripRef.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    const next = { overflow: max > 1, left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 };
+    setTabScroll((s) => (s.overflow === next.overflow && s.left === next.left && s.right === next.right ? s : next));
+  }, []);
+  useEffect(() => {
+    const el = tabStripRef.current;
+    if (!el) return;
+    updateTabScroll();
+    const ro = new ResizeObserver(updateTabScroll);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [updateTabScroll]);
+  const scrollTabs = (dir: -1 | 1) => {
+    const el = tabStripRef.current;
+    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.7, behavior: "smooth" });
+  };
   const dragRef = useRef<{ id: Filter; x: number; y: number; active: boolean } | null>(null);
   const [draggingTab, setDraggingTab] = useState<Filter | null>(null);
   const suppressTabClick = useRef(false);
@@ -375,6 +398,13 @@ function ChatList({
       if (Math.abs(e.clientX - drag.x) < 4 && Math.abs(e.clientY - drag.y) < 4) return;
       drag.active = true;
       setDraggingTab(drag.id);
+    }
+    // Dragging near either edge of the strip scrolls it, so hidden chips can be reached.
+    const strip = tabStripRef.current;
+    if (strip) {
+      const s = strip.getBoundingClientRect();
+      if (e.clientX < s.left + 24) strip.scrollLeft -= 8;
+      else if (e.clientX > s.right - 24) strip.scrollLeft += 8;
     }
     // The nearest chip by its center decides the new slot, so wrapped rows work too.
     let nearest: Filter = drag.id;
@@ -410,6 +440,10 @@ function ChatList({
     dragRef.current = null;
     setDraggingTab(null);
   };
+  // Keep the active filter's chip in view when it sits past the strip's scrolled edge.
+  useEffect(() => {
+    chipRefs.current.get(filter)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [filter]);
   const pinned = useChatPrefs((s) => s.pinned);
   const muted = useChatPrefs((s) => s.muted);
   const blurred = useChatPrefs((s) => s.blurred);
@@ -578,41 +612,68 @@ function ChatList({
             </button>
           )}
         </div>
-        {/* In a grid tile the filters and the actions are two groups: `justify-between` keeps the
-            actions at the right edge while they fit beside the filters, and left-aligns them on
-            the line they wrap to, instead of leaving them floating right under the filters. The
-            regular chat pane keeps its single wrapping row (chips then actions). */}
-        <div className={cn("flex gap-1 items-center flex-wrap", fill && "justify-between gap-x-1 gap-y-1.5")}>
-          <div className="flex flex-wrap items-center gap-1">
-            {tabOrder.map((f) => (
+        {/* Two rows: the filter chips scroll sideways when they don't fit (a vertical mouse wheel
+            scrolls them too), and the actions sit on their own row below. */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-0.5">
+            {tabScroll.overflow && (
               <button
-                key={f}
-                ref={(el) => {
-                  if (el) chipRefs.current.set(f, el);
-                  else chipRefs.current.delete(f);
-                }}
-                onPointerDown={(e) => onTabPointerDown(e, f)}
-                onPointerMove={onTabPointerMove}
-                onPointerUp={onTabPointerUp}
-                onPointerCancel={onTabPointerCancel}
-                onClick={() => {
-                  if (suppressTabClick.current) {
-                    suppressTabClick.current = false;
-                    return;
-                  }
-                  setFilter(f);
-                }}
-                className={cn(
-                  chipCls,
-                  filter === f ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
-                  draggingTab === f && "cursor-grabbing opacity-70 scale-105",
-                )}
+                onClick={() => scrollTabs(-1)}
+                disabled={!tabScroll.left}
+                aria-label="Scroll filters left"
+                className="shrink-0 rounded-full p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
               >
-                {f}
+                <ChevronLeft size={14} />
               </button>
-            ))}
+            )}
+            <div
+              ref={tabStripRef}
+              onScroll={updateTabScroll}
+              onWheel={(e) => {
+                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
+              }}
+              className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+            >
+              {tabOrder.map((f) => (
+                <button
+                  key={f}
+                  ref={(el) => {
+                    if (el) chipRefs.current.set(f, el);
+                    else chipRefs.current.delete(f);
+                  }}
+                  onPointerDown={(e) => onTabPointerDown(e, f)}
+                  onPointerMove={onTabPointerMove}
+                  onPointerUp={onTabPointerUp}
+                  onPointerCancel={onTabPointerCancel}
+                  onClick={() => {
+                    if (suppressTabClick.current) {
+                      suppressTabClick.current = false;
+                      return;
+                    }
+                    setFilter(f);
+                  }}
+                  className={cn(
+                    chipCls,
+                    filter === f ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
+                    draggingTab === f && "cursor-grabbing opacity-70 scale-105",
+                  )}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+            {tabScroll.overflow && (
+              <button
+                onClick={() => scrollTabs(1)}
+                disabled={!tabScroll.right}
+                aria-label="Scroll filters right"
+                className="shrink-0 rounded-full p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <ChevronRight size={14} />
+              </button>
+            )}
           </div>
-          <div className={cn("flex items-center gap-1", !fill && "ml-auto")}>
+          <div className={cn("flex items-center gap-1", !fill && "justify-end")}>
             {!selecting && filter === "channels" && (
               <button
                 onClick={() => setFollowing(true)}

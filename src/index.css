@@ -85,6 +85,13 @@ select option {
 .hscroll {
   scrollbar-width: thin;
 }
+/* Chat filter tabs: one sideways-scrolling row with no visible bar (wheel and trackpad scroll it). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 /* Conversation backdrop: a tiled doodle like WhatsApp's chat wallpaper. One mid-grey tile serves
    both themes through the blend with the backdrop colour: `multiply` draws it as faint darker
    lines on the light beige, `screen` as faint lighter lines on the dark background, under a

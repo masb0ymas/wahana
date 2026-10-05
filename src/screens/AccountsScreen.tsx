@@ -31,6 +31,16 @@ const nativeTone: Record<NativeWaStatus, "green" | "amber" | "red" | "neutral" |
   failed: "red",
 };
 
+/** Human-readable form of the raw status enum. */
+const nativeLabel: Record<NativeWaStatus, string> = {
+  working: "Connected",
+  starting: "Connecting…",
+  qr: "Waiting for scan",
+  stopped: "Stopped",
+  logged_out: "Logged out",
+  failed: "Failed",
+};
+
 /** Native accounts: link, connect/disconnect, rename, logout, remove. */
 function NativeAccountsSection() {
   const accounts = useWhatsApp((s) => s.accounts);
@@ -153,7 +163,7 @@ function NativeAccountCard({
                 >
                   <Pencil size={13} />
                 </button>
-                <Badge tone={nativeTone[a.status]}>{a.status}</Badge>
+                <Badge tone={nativeTone[a.status]}>{nativeLabel[a.status]}</Badge>
                 {active && <Badge tone="green">active</Badge>}
               </>
             )}
@@ -166,7 +176,13 @@ function NativeAccountCard({
         </div>
         <div className="ml-auto flex gap-1">
           {!live && a.status !== "qr" && a.status !== "starting" && !editing && (
-            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void run(() => nativeWa.start(a.id))} title="Connect">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void run(() => nativeWa.start(a.id))}
+              title={a.status === "logged_out" ? "Link again (scan the QR)" : "Connect"}
+            >
               <Play size={14} />
             </Button>
           )}
@@ -200,6 +216,10 @@ function NativeAccountCard({
           </Button>
         </div>
       </div>
+      {a.status === "failed" && a.error && <p className="text-xs text-red-600 dark:text-red-400 selectable">{a.error}</p>}
+      {a.status === "logged_out" && (
+        <p className="text-xs text-neutral-500">This device was unlinked on your phone. Press Connect to link it again.</p>
+      )}
       <div className="flex items-center gap-3 flex-wrap text-xs">
         <span className="text-neutral-500">Appearance</span>
         <div className="flex items-center gap-1">

@@ -41,6 +41,10 @@ const ACCOUNTS_FILE: &str = "accounts.json";
 /// Messages asked of the phone per "load older" request.
 const OLDER_PAGE: i32 = 50;
 
+/// How long a starting account may go without reaching a QR code or a connection before the
+/// watchdog reports it as failed. A blocked network would otherwise look like an endless start.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(40);
+
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WaStatus {
@@ -1771,6 +1775,25 @@ async fn run_account(
     if let Some(handle) = orphaned {
         handle.shutdown().await;
     }
+    // A blocked network leaves the client at `Starting` with no hint of why. Report it after a
+    // grace period instead of spinning forever; a connection that still succeeds later clears
+    // this, since the QR and Connected handlers set the status and drop the error.
+    let watchdog_app = app.clone();
+    let watchdog_account = account.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(CONNECT_TIMEOUT).await;
+        let mut inner = watchdog_account.inner.lock().unwrap();
+        if inner.generation != generation || !inner.running || inner.status != WaStatus::Starting {
+            return;
+        }
+        inner.status = WaStatus::Failed;
+        inner.error = Some(
+            "Couldn't connect to WhatsApp. Check your internet, VPN or firewall, then try again."
+                .into(),
+        );
+        drop(inner);
+        emit_account(&watchdog_app, &watchdog_account);
+    });
     Ok(())
 }
 

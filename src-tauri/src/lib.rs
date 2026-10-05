@@ -150,6 +150,7 @@ pub fn run() {
             whatsapp::wa_native_mark_all_read,
             whatsapp::wa_native_delete_chats,
             whatsapp::wa_native_pin_chat,
+            whatsapp::wa_native_archive_chat,
             whatsapp::wa_native_mute_chat,
             notifications::notify_chat
         ])

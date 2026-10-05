@@ -4413,6 +4413,34 @@ pub async fn wa_native_pin_chat(
     result.map_err(|e| e.to_string())
 }
 
+/// Archives or unarchives a chat (WhatsApp app state, so it syncs to the phone).
+#[tauri::command]
+pub async fn wa_native_archive_chat(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    on: bool,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = account
+        .inner
+        .lock()
+        .unwrap()
+        .client
+        .clone()
+        .ok_or("WhatsApp account is not running")?;
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let actions = client.chat_actions();
+    let result = if on {
+        actions.archive_chat(&jid, None).await
+    } else {
+        actions.unarchive_chat(&jid, None).await
+    };
+    result.map_err(|e| e.to_string())
+}
+
 /// Mutes a chat until `until` (epoch ms, or -1 for good), or unmutes it when `until` is `None`
 /// (WhatsApp app state, so it syncs to the phone).
 #[tauri::command]

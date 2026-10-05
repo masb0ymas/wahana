@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Archive,
   CheckCheck,
   BellOff,
   EyeOff,
@@ -103,10 +104,10 @@ import { useWhatsApp } from "@/store/whatsapp";
 /** Timestamps from the backend are milliseconds; the shared formatters take seconds. */
 const secs = (ms: number) => Math.floor(ms / 1000);
 
-type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels";
+type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels" | "archived";
 
 /** Every filter tab, in the default order. */
-const KNOWN_FILTERS: Filter[] = ["all", "unread", "private", "groups", "community", "channels"];
+const KNOWN_FILTERS: Filter[] = ["all", "unread", "private", "groups", "community", "channels", "archived"];
 
 /**
  * Keeps a stored tab order usable: unknown ids are dropped and missing known filters are
@@ -410,6 +411,7 @@ function ChatList({
   const pinned = useChatPrefs((s) => s.pinned);
   const muted = useChatPrefs((s) => s.muted);
   const blurred = useChatPrefs((s) => s.blurred);
+  const archived = useChatPrefs((s) => s.archived);
   const labelsTick = useWhatsApp((s) => s.labelsTick[account.id] ?? 0);
 
   useEffect(() => {
@@ -435,6 +437,13 @@ function ChatList({
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const list = chats.filter((c) => {
+      // Archived chats only show under the "archived" tab, and nowhere else.
+      const isArchived = !!archived[nativeChatKey(account.id, c.id)];
+      if (filter === "archived") {
+        if (!isArchived) return false;
+      } else if (isArchived) {
+        return false;
+      }
       if (filter === "unread" && c.unread === 0) return false;
       if (filter === "private" && !isDirect(c.id)) return false;
       if (filter === "groups" && !isGroup(c.id)) return false;
@@ -452,7 +461,7 @@ function ChatList({
     if (filter === "community") return [...list].sort((a, b) => (a.community ?? "").localeCompare(b.community ?? ""));
     // Pinned chats float to the top (most recently pinned first), like WhatsApp.
     return [...list].sort((a, b) => (pinned[nativeChatKey(account.id, b.id)] ?? 0) - (pinned[nativeChatKey(account.id, a.id)] ?? 0));
-  }, [chats, q, filter, pinned, account.id]);
+  }, [chats, q, filter, pinned, archived, account.id]);
 
   // Chats that vanish from the list (deleted elsewhere) drop out of the selection.
   useEffect(() => {
@@ -509,6 +518,16 @@ function ChatList({
       exitSelect();
     });
   };
+  const archivePicked = () =>
+    run(async () => {
+      const ids = [...picked];
+      if (ids.length === 0) return;
+      const on = filter !== "archived";
+      const prefs = useChatPrefs.getState();
+      for (const id of ids) prefs.toggle("archived", nativeChatKey(account.id, id), on);
+      await Promise.all(ids.map((id) => nativeWa.archiveChat(account.id, id, on).catch(() => {})));
+      exitSelect();
+    });
 
   return (
     <div
@@ -635,6 +654,13 @@ function ChatList({
             </button>
             <button
               disabled={busy || picked.size === 0}
+              onClick={() => void archivePicked()}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40"
+            >
+              <Archive size={13} /> {filter === "archived" ? "Unarchive" : "Archive"}
+            </button>
+            <button
+              disabled={busy || picked.size === 0}
               onClick={() => void deletePicked()}
               className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-40"
             >
@@ -651,11 +677,13 @@ function ChatList({
       <div className="flex-1 overflow-y-auto">
         {shown.length === 0 ? (
           <div className="p-4 text-xs text-neutral-500">
-            {chats.length > 0
-              ? "No chats match."
-              : account.status === "working"
-                ? "Your phone sends chat history only when a device is linked. If this account was linked before history support, log out and link it again to load your chats."
-                : "No chats yet."}
+            {filter === "archived"
+              ? "No archived chats."
+              : chats.length > 0
+                ? "No chats match."
+                : account.status === "working"
+                  ? "Your phone sends chat history only when a device is linked. If this account was linked before history support, log out and link it again to load your chats."
+                  : "No chats yet."}
           </div>
         ) : (
           shown.map((c, i) => {
@@ -701,6 +729,7 @@ function ChatList({
           pinned={!!pinned[nativeChatKey(account.id, menu.chat.id)]}
           muted={muted[nativeChatKey(account.id, menu.chat.id)]}
           blurred={!!blurred[nativeChatKey(account.id, menu.chat.id)]}
+          archived={!!archived[nativeChatKey(account.id, menu.chat.id)]}
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
@@ -723,13 +752,14 @@ function ChatList({
   );
 }
 
-/** Right-click menu on a native chat: pin, mute, blur, labels. */
+/** Right-click menu on a native chat: pin, archive, mute, blur, labels. */
 function RowMenu({
   accountId,
   chat,
   pinned,
   muted,
   blurred,
+  archived,
   x,
   y,
   onClose,
@@ -740,6 +770,7 @@ function RowMenu({
   pinned: boolean;
   muted: number | undefined;
   blurred: boolean;
+  archived: boolean;
   x: number;
   y: number;
   onClose: () => void;
@@ -773,6 +804,17 @@ function RowMenu({
           }}
         >
           <Pin size={13} /> {pinned ? "Unpin" : "Pin to top"}
+        </button>
+        <button
+          className={item}
+          title="Hide this chat from the main list; it stays in the Archived tab"
+          onClick={() => {
+            togglePref("archived", key);
+            void nativeWa.archiveChat(accountId, chat.id, !archived).catch(() => {});
+            onClose();
+          }}
+        >
+          <Archive size={13} /> {archived ? "Unarchive" : "Archive"}
         </button>
         <MuteControl
           className={item}

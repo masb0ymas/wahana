@@ -104,7 +104,7 @@ const DEFAULT_PREFS: Prefs = {
   linkPreviews: true,
   sendTyping: true,
   readReceipts: "always",
-  chatTabOrder: ["all", "unread", "private", "groups", "community", "channels"],
+  chatTabOrder: ["all", "unread", "private", "groups", "community", "channels", "archived"],
   gridColumns: 3,
   gridRows: 2,
   aiBaseUrl: "",

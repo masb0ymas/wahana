@@ -380,6 +380,8 @@ export const nativeWa = {
     invoke<void>("wa_native_label_link", { id, labelId, chatId, on }),
   /** Pin or unpin a chat (syncs to the phone). */
   pinChat: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_pin_chat", { id, chatId, on }),
+  /** Archive or unarchive a chat (syncs to the phone). */
+  archiveChat: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_archive_chat", { id, chatId, on }),
   /** Mute a chat until `until` (epoch ms, -1 = for good) or unmute it with null (syncs to the phone). */
   muteChat: (id: string, chatId: string, until: number | null) => invoke<void>("wa_native_mute_chat", { id, chatId, until }),
   /** The newest messages with an attachment, oldest first. */

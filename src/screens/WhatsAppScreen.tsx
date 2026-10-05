@@ -4,6 +4,7 @@ import {
   CheckCheck,
   BellOff,
   EyeOff,
+  RotateCw,
   ChevronLeft,
   Languages,
   Loader2,
@@ -168,6 +169,16 @@ export function WhatsAppScreen({
     };
   }, [account.id, tick, account.unread]);
 
+  /** Re-read the chat list on demand (the list otherwise refreshes as events arrive). */
+  const refresh = useCallback(async () => {
+    setError(null);
+    try {
+      setChats(await nativeWa.chats(account.id));
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }, [account.id]);
+
   // Mute state set on the phone (or another linked device) wins over the local copy.
   useEffect(() => {
     const prefs = useChatPrefs.getState();
@@ -231,6 +242,7 @@ export function WhatsAppScreen({
             onSelect={setChatId}
             onDeleted={(ids) => ids.includes(chatId ?? "") && setChatId(null)}
             error={error}
+            onRefresh={refresh}
             fill
           />
         )}
@@ -248,6 +260,7 @@ export function WhatsAppScreen({
         onSelect={setChatId}
         onDeleted={(ids) => ids.includes(chatId ?? "") && setChatId(null)}
         error={error}
+        onRefresh={refresh}
         width={listWidth}
       />
       <ResizeHandle onDrag={(dx) => setListWidth((w) => w + dx)} onReset={() => setListWidth(320)} />
@@ -296,6 +309,7 @@ function ChatList({
   onSelect,
   onDeleted,
   error,
+  onRefresh,
   width,
   fill,
 }: {
@@ -306,10 +320,13 @@ function ChatList({
   onSelect: (id: string) => void;
   onDeleted: (ids: string[]) => void;
   error: string | null;
+  /** Re-read the chat list; the button spins until it resolves. */
+  onRefresh: () => Promise<void>;
   width?: number;
   /** Fill the parent width instead of a fixed pane width (embedded in a grid cell). */
   fill?: boolean;
 }) {
+  const [refreshing, setRefreshing] = useState(false);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [labels, setLabels] = useState<NativeLabel[]>([]);
@@ -593,6 +610,18 @@ function ChatList({
               )}
             >
               <CheckSquare size={12} /> {selecting ? "Cancel" : "Select"}
+            </button>
+            <button
+              onClick={() => {
+                setRefreshing(true);
+                void onRefresh().finally(() => setRefreshing(false));
+              }}
+              disabled={refreshing}
+              title="Refresh chats"
+              aria-label="Refresh chats"
+              className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 disabled:opacity-50"
+            >
+              <RotateCw size={12} className={cn(refreshing && "animate-spin")} />
             </button>
           </span>
         </div>

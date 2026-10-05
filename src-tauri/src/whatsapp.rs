@@ -3049,6 +3049,40 @@ pub async fn wa_native_picture(
     Ok(url)
 }
 
+/// whatsapp-rust 0.7.0 treats a message as encrypted from the mere presence of a media
+/// key, then demands `file_enc_sha256` to build the URL token. Channel (newsletter) posts
+/// are not E2E-encrypted, but some still carry a media key without a `file_enc_sha256`,
+/// which made the download fail with "Missing file_enc_sha256". Requiring the encrypted
+/// hash as well matches WhatsApp Web; genuinely encrypted media always carries both.
+struct MediaWithEncHash<'a>(&'a dyn Downloadable);
+
+impl Downloadable for MediaWithEncHash<'_> {
+    fn direct_path(&self) -> Option<&str> {
+        self.0.direct_path()
+    }
+    fn media_key(&self) -> Option<&[u8]> {
+        self.0.media_key()
+    }
+    fn file_enc_sha256(&self) -> Option<&[u8]> {
+        self.0.file_enc_sha256()
+    }
+    fn file_sha256(&self) -> Option<&[u8]> {
+        self.0.file_sha256()
+    }
+    fn file_length(&self) -> Option<u64> {
+        self.0.file_length()
+    }
+    fn app_info(&self) -> MediaType {
+        self.0.app_info()
+    }
+    fn static_url(&self) -> Option<&str> {
+        self.0.static_url()
+    }
+    fn is_encrypted(&self) -> bool {
+        self.0.media_key().is_some() && self.0.file_enc_sha256().is_some()
+    }
+}
+
 /// Downloads and decrypts a message's attachment. Returned as raw bytes; the frontend
 /// keeps them in the shared media cache.
 #[tauri::command]
@@ -3088,7 +3122,7 @@ pub async fn wa_native_media(
         return Err("unsupported media".into());
     };
     let bytes = client
-        .download(downloadable)
+        .download(&MediaWithEncHash(downloadable))
         .await
         .map_err(|e| format!("download failed: {e}"))?;
     Ok(Response::new(bytes))

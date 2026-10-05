@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.8 — 2026-10-05
+
+### Added
+
+- A refresh button in the chat list header (the Chats tab and every grid cell) to re-read the list on demand; the icon spins while it reloads.
+- Blur a chat for privacy: right-click a chat → "Blur preview" blurs its name, last-message preview and message bubbles until you hover them, and raises a generic "New message" notification instead of the content.
+- Media auto-loads are queued, so attachments download gradually instead of in one burst.
+
+### Changed
+
+- Notifications name the chat like the chat list does: a saved contact by name, anyone else by their number, and a group by its subject with the sender leading the body.
+- The Accounts screen shows plain-word statuses (Connected, Connecting…, Waiting for scan, Stopped, Logged out, Failed), the error when a connection fails, and a hint on a logged-out account.
+
+### Fixed
+
+- A WhatsApp connection that never reaches a QR code or connects is now reported as failed after 40 seconds with a hint, instead of sitting at "starting" forever.
+- Channel media that carries a media key without an enc hash now downloads.
+
 ## 1.1.7 — 2026-10-04
 
 ### Added

@@ -25,6 +25,20 @@ export function formatTime(unixSeconds: number) {
   return d.toLocaleDateString([], { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
+const bubbleTime = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
+const bubbleWeekday = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
+
+/**
+ * Time shown inside a message bubble, in the app's English and 24-hour clock: "15:30" for today,
+ * otherwise the short weekday too ("Sat, 15:30"). The day divider above already names the full date.
+ */
+export function formatMessageTime(unixSeconds: number) {
+  const d = new Date(unixSeconds * 1000);
+  const time = bubbleTime.format(d);
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return `${bubbleWeekday.format(d)}, ${time}`;
+}
+
 export function formatDateDivider(unixSeconds: number) {
   const d = new Date(unixSeconds * 1000);
   const now = new Date();

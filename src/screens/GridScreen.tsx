@@ -44,7 +44,9 @@ export function GridScreen() {
           <Stepper label="Rows" value={rows} max={MAX_ROWS} onChange={(v) => void useSettings.getState().save({ gridRows: v })} />
         </div>
       </div>
-      <div ref={areaRef} className="flex-1 min-h-0 overflow-y-auto">
+      {/* The scrollbar lives in the page's right padding (stable gutter, pulled out by -mr-2.5 =
+          8px track + 2px), so tiles keep the header's right edge whether or not the grid overflows. */}
+      <div ref={areaRef} className="flex-1 min-h-0 overflow-y-auto -mr-2.5 pr-0.5 [scrollbar-gutter:stable]">
         {accounts.length === 0 ? (
           <div className="h-full grid place-items-center text-sm text-neutral-500">No WhatsApp account linked yet.</div>
         ) : (

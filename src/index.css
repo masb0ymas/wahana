@@ -46,17 +46,59 @@ textarea,
 select option {
   @apply bg-white text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100;
 }
+/* One slim scrollbar for every scroll area (chat list, messages, panels): an 8px track whose
+   thumb is inset by a transparent border (4px visible, 6px on hover) and drawn at 80% opacity.
+   Its length is proportional to how much of the content is in view; the 48px floor keeps it
+   easy to see and grab in long lists (hundreds of chats), where the ratio alone gives a sliver.
+   Opacity goes into the colour because `opacity` on a scrollbar pseudo-element is not honoured
+   by WebKit. Dark mode needs the `.dark` ancestor selector: the `dark:` variant compiles to
+   `:where(.dark *)` on the element, which a scrollbar pseudo-element never matches. */
+:root {
+  --scrollbar-thumb: color-mix(in oklab, var(--color-neutral-400) 80%, transparent);
+  --scrollbar-thumb-hover: color-mix(in oklab, var(--color-neutral-500) 80%, transparent);
+}
+.dark {
+  --scrollbar-thumb: color-mix(in oklab, var(--color-neutral-600) 80%, transparent);
+  --scrollbar-thumb-hover: color-mix(in oklab, var(--color-neutral-500) 80%, transparent);
+}
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-neutral-300 dark:bg-neutral-700 rounded-full;
+  min-height: 48px;
+  min-width: 48px;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  background-color: var(--scrollbar-thumb);
+}
+::-webkit-scrollbar-thumb:hover {
+  border-width: 1px;
+  background-color: var(--scrollbar-thumb-hover);
 }
 /* Album photo strip: a slim horizontal bar so the sideways scroll is discoverable. */
 .hscroll {
   scrollbar-width: thin;
 }
-.hscroll::-webkit-scrollbar {
-  height: 6px;
+/* Conversation backdrop: a tiled doodle like WhatsApp's chat wallpaper. One mid-grey tile serves
+   both themes through the blend with the backdrop colour: `multiply` draws it as faint darker
+   lines on the light beige, `screen` as faint lighter lines on the dark background, under a
+   translucent layer of that background that softens it as WhatsApp's dark wallpaper is. The
+   element itself does not scroll (the message list inside it does), so the pattern stays put. */
+.chat-wallpaper {
+  background-color: #efeae2;
+  background-image: url("./assets/chat-wallpaper.svg");
+  background-size: 320px;
+  background-blend-mode: multiply;
+}
+.dark .chat-wallpaper {
+  background-color: var(--color-neutral-950);
+  background-image: linear-gradient(color-mix(in oklab, var(--color-neutral-950) 40%, transparent)), url("./assets/chat-wallpaper.svg");
+  background-size: auto, 320px;
+  background-blend-mode: normal, screen;
 }

@@ -34,7 +34,18 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
 import { LANGUAGES, aiConfigured, langName, translate } from "@/lib/ai";
 import { formatBytes } from "@/lib/mediaCache";
-import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isDirect, isGroup } from "@/lib/utils";
+import {
+  cn,
+  convKey,
+  displayId,
+  errMsg,
+  formatDateDivider,
+  formatMessageTime,
+  formatTime,
+  isChannel,
+  isDirect,
+  isGroup,
+} from "@/lib/utils";
 import { chatLabel } from "@/lib/chatLabel";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import { applyMentions, memberLabel, mentionResolver, type PickedMention } from "@/lib/mentions";
@@ -1201,8 +1212,13 @@ function Conversation({
 
   return (
     <>
-      <div className="flex-1 min-w-0 flex flex-col bg-[#efeae2] dark:bg-neutral-950">
-        <header className="h-14 shrink-0 flex items-center gap-3 px-4 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800">
+      <div className="flex-1 min-w-0 flex flex-col chat-wallpaper">
+        <header
+          className={cn(
+            "shrink-0 flex items-center bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800",
+            compact ? "h-12 gap-2 px-2.5" : "h-14 gap-3 px-4",
+          )}
+        >
           {onBack && (
             <button
               onClick={onBack}
@@ -1213,14 +1229,14 @@ function Conversation({
             </button>
           )}
           <button
-            className="group flex items-center gap-3 min-w-0 flex-1 text-left"
+            className={cn("group flex items-center min-w-0 flex-1 text-left", compact ? "gap-2" : "gap-3")}
             onClick={() => {
               setProfileId(null);
               setInfo((v) => !v);
             }}
             title={group ? "Group info" : channel ? "Channel info" : "Contact info"}
           >
-            <Avatar src={picture} name={name} size={36} />
+            <Avatar src={picture} name={name} size={compact ? 32 : 36} />
             <div className={cn("min-w-0", blurred && "blur-[3px] transform-gpu group-hover:blur-none transition-[filter] duration-150")}>
               <div className="font-medium truncate">{title}</div>
               <div className="text-xs truncate text-neutral-500">
@@ -1282,7 +1298,7 @@ function Conversation({
 
         <div
           ref={listRef}
-          className="flex-1 overflow-y-auto px-6 py-4"
+          className={cn("@container flex-1 overflow-y-auto", compact ? "px-2.5 py-2" : "px-6 py-4")}
           onScroll={(e) => {
             const el = e.currentTarget;
             atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -1325,18 +1341,19 @@ function Conversation({
             const newDay = !prev || new Date(prev.timestamp).toDateString() !== new Date(m.timestamp).toDateString();
             const showSender = group && !m.fromMe && (newDay || prev?.fromMe || prev?.senderName !== m.senderName);
             const next = messages[i + (album?.length ?? 1)];
-            const showAvatar =
-              !m.fromMe &&
-              group &&
-              (!next ||
-                next.fromMe ||
-                new Date(next.timestamp).toDateString() !== new Date(m.timestamp).toDateString() ||
-                next.senderName !== m.senderName);
+            // The last bubble of a run from one speaker (the run also ends at a day divider) carries the
+            // tail and the group avatar, and gets a little more air below it so each run reads as one turn.
+            const turnEnds =
+              !next ||
+              next.fromMe !== m.fromMe ||
+              next.senderName !== m.senderName ||
+              new Date(next.timestamp).toDateString() !== new Date(m.timestamp).toDateString();
+            const showAvatar = !m.fromMe && group && turnEnds;
             return (
               <div
                 key={m.id}
                 data-msg={bareId(m.id)}
-                className={cn("pb-1 rounded transition-colors duration-500", flash === bareId(m.id) && "bg-wa/25")}
+                className={cn(turnEnds ? "pb-2.5" : "pb-1", "rounded transition-colors duration-500", flash === bareId(m.id) && "bg-wa/25")}
               >
                 {newDay && (
                   <div className="flex justify-center my-3">
@@ -1356,6 +1373,7 @@ function Conversation({
                     avatarChatId={m.senderPhone ? `${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net` : null}
                     pinned={isPinned(pins, prefsKey, m.id)}
                     blurred={blurred}
+                    tail={turnEnds}
                     onMenu={onMenu}
                     onPickReply={setDraftPick}
                     onJumpTo={(reply) => {
@@ -1603,7 +1621,9 @@ function BubbleAvatar({
   const picture = usePicture(accountId, chatId ?? "", connected && !!chatId);
   const avatar = <Avatar src={picture} name={name} size={28} />;
   return onClick ? (
-    <button className="rounded-full" onClick={onClick} title="Profile">
+    // `block`: an inline button sits on a text line, and a picture avatar's baseline (its bottom
+    // edge) leaves the line's descent below it, lifting the avatar above the bubble's bottom.
+    <button className="block rounded-full" onClick={onClick} title="Profile">
       {avatar}
     </button>
   ) : (
@@ -1621,6 +1641,7 @@ const Bubble = memo(function Bubble({
   avatarChatId,
   pinned,
   blurred,
+  tail,
   onMenu,
   onPickReply,
   onJumpTo,
@@ -1638,6 +1659,8 @@ const Bubble = memo(function Bubble({
   pinned: boolean;
   /** Blur the bubble content until hovered (per-chat privacy). */
   blurred: boolean;
+  /** Last bubble of a run from one speaker: draw WhatsApp's tail at its bottom corner. */
+  tail: boolean;
   onMenu: (m: NativeMessage, pos: { x: number; y: number }) => void;
   /** Put a suggested reply into the composer. */
   onPickReply?: (text: string) => void;
@@ -1664,6 +1687,8 @@ const Bubble = memo(function Bubble({
   const mentionFor = useMemo(() => mentionResolver(groupInfo, me?.id), [groupInfo, me?.id]);
   // Deleted for everyone: the stored copy keeps what it said; older tombstones only know that it went.
   const revoked = m.revokedAt != null || (!!tomb && (tomb.kind ?? "revoked") === "revoked");
+  // Stickers float without a bubble and a deleted message is a dashed outline: neither takes a tail.
+  const hasTail = tail && !sticker && !revoked;
   // Deleted messages keep their full text (struck through); a long body is clamped with a Read more toggle.
   const longBody = !revoked && !!m.body && (m.body.length > 350 || m.body.split("\n").length > 6);
   // A channel reports totals only; mine comes from what I reacted locally.
@@ -1674,7 +1699,9 @@ const Bubble = memo(function Bubble({
   return (
     <div className={cn("flex items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
       {!mine && avatar !== "none" && (
-        <div className="w-7 shrink-0">
+        // The row aligns to the bottom of the bubble column; reactions overhang the bubble by 12px
+        // (h-5 row pulled up by -mt-2), so lift the avatar by the same to sit level with the bubble.
+        <div className={cn("w-7 shrink-0", reactions.length > 0 && "mb-3")}>
           {avatar === "show" && (
             <BubbleAvatar
               accountId={accountId}
@@ -1686,7 +1713,7 @@ const Bubble = memo(function Bubble({
           )}
         </div>
       )}
-      <div className={cn("flex flex-col max-w-[70%]", mine ? "items-end" : "items-start")}>
+      <div className={cn("flex flex-col max-w-[85%] @2xl:max-w-[70%]", mine ? "items-end" : "items-start")}>
         <div
           onContextMenu={(e) => {
             e.preventDefault();
@@ -1694,7 +1721,8 @@ const Bubble = memo(function Bubble({
           }}
           title="Right-click for more"
           className={cn(
-            "rounded-lg px-3 py-1.5 text-sm selectable",
+            "relative rounded-lg px-3 pt-2 pb-1.5 text-sm selectable",
+            hasTail && (mine ? "rounded-br-none" : "rounded-bl-none"),
             revoked
               ? cn(
                   "border border-dashed",
@@ -1710,10 +1738,32 @@ const Bubble = memo(function Bubble({
             blurred && "blur-[3px] transform-gpu hover:blur-none transition-[filter] duration-150",
           )}
         >
+          {hasTail && (
+            // WhatsApp's own tail shape, flipped upside down to sit at the bottom corner: same fill
+            // as the bubble, flush with its squared corner and pointing outward. Its path starts at
+            // y=1 of 13, which the flip puts 1px above the bottom, hence the 1px drop.
+            <svg
+              aria-hidden
+              viewBox="0 0 8 13"
+              className={cn(
+                "pointer-events-none absolute -bottom-px w-2 h-[13px] -scale-y-100",
+                mine ? "-right-2 text-[#d9fdd3] dark:text-wa-teal" : "-left-2 text-white dark:text-neutral-800",
+              )}
+            >
+              <path
+                fill="currentColor"
+                d={
+                  mine
+                    ? "M5.188 1H0v11.193l6.467-8.625C7.526 2.156 6.958 1 5.188 1z"
+                    : "M1.533 3.568 8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z"
+                }
+              />
+            </svg>
+          )}
           {revoked && (
             <div className="flex items-center gap-1 text-xs italic text-neutral-500 dark:text-neutral-400 mb-0.5">
               🚫 {mine ? "You deleted this message" : "This message was deleted"}
-              {m.revokedAt != null && <span className="not-italic text-[10px]">· {formatTime(secs(m.revokedAt))}</span>}
+              {m.revokedAt != null && <span className="not-italic text-[10px]">· {formatMessageTime(secs(m.revokedAt))}</span>}
             </div>
           )}
           {showSender && (m.senderName || m.senderPhone) && (
@@ -1816,7 +1866,7 @@ const Bubble = memo(function Bubble({
               {m.edits.map((e, i) => (
                 <div key={i} className="text-xs text-neutral-500 dark:text-neutral-400">
                   <span className="line-through break-words">{e.body}</span>
-                  <span className="ml-1 text-[10px]">· replaced {formatTime(secs(e.replacedAt))}</span>
+                  <span className="ml-1 text-[10px]">· replaced {formatMessageTime(secs(e.replacedAt))}</span>
                 </div>
               ))}
             </div>
@@ -1837,12 +1887,12 @@ const Bubble = memo(function Bubble({
               ) : (
                 <span className="italic">edited</span>
               ))}
-            {formatTime(secs(m.timestamp))}
+            {formatMessageTime(secs(m.timestamp))}
             {mine && <AckIcon ack={m.ack} />}
           </div>
         </div>
         {reactions.length > 0 && (
-          <div className="-mt-2 mx-2 flex gap-1 z-10">
+          <div className="-mt-2 h-5 mx-2 flex gap-1 z-10">
             {reactions.map((r) => (
               <span
                 key={r.emoji}
@@ -2305,7 +2355,8 @@ function Composer({
         if (f) attach(f);
       }}
       className={cn(
-        "relative shrink-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-3 space-y-2",
+        "relative shrink-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800",
+        compact ? "p-2 space-y-1.5" : "p-3 space-y-2",
         dragging && "ring-2 ring-inset ring-wa-dark",
       )}
     >
@@ -2441,7 +2492,9 @@ function Composer({
                 ? "Connect the account to send messages"
                 : attachment
                   ? "Add a caption (optional)"
-                  : "Type a message (Enter to send, Shift+Enter for newline)"
+                  : compact
+                    ? "Type a message"
+                    : "Type a message (Enter to send, Shift+Enter for newline)"
             }
             className="flex-1 resize-none rounded-lg bg-neutral-100 dark:bg-neutral-800 px-3 py-2 text-sm outline-none max-h-40 disabled:opacity-60"
           />

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Message bubbles have WhatsApp's tail shape. It sits at the bottom corner of the last bubble of each run from one speaker (so the newest message always has one), beside the group avatar. Stickers and deleted messages have no tail.
+- The conversation area has a WhatsApp-style doodle wallpaper behind the messages, in light and dark mode. It stays in place while the messages scroll.
+
+### Changed
+
+- Multi-account tiles give the conversation more room: tighter message-list padding, a slimmer header, and a compact composer with a short placeholder. Message bubbles get a little more padding, use up to 85% of a narrow conversation's width, and leave extra space where the speaker changes.
+- Scrollbars are slimmer and the same everywhere (chat list, messages, panels): a 4px thumb at 80% opacity that widens on hover. Its length follows how much of the list is in view, but never drops below 48px, so it stays easy to grab in long chat lists. On the multi-account screen the scrollbar sits in the page margin, so tiles stay aligned with the header.
+- Times inside message bubbles use a 24-hour clock. A message from before today shows its weekday as well, e.g. "Sat, 15:30", instead of the weekday alone without the time. The same applies to the deleted and edited notes in a bubble.
+
+### Fixed
+
+- In dark mode, scrollbar thumbs were drawn in the light-mode grey; they now use the dark-mode colour.
+- In group chats, a sender's avatar now sits level with the bottom of their bubble. It used to ride a few pixels high for senders with a profile picture, and drop below the bubble when the message had reactions.
+
 ## 1.1.8 — 2026-10-05
 
 ### Added

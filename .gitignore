@@ -35,3 +35,10 @@ notes/
 # local agent taste preferences
 .commandcode/taste/
 .commandcode/
+
+# local agent tooling
+.omc/
+graft/
+
+# npm is the package manager (package-lock.json)
+bun.lock

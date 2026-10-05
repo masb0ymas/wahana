@@ -62,7 +62,7 @@ export function NativeMessageInfo({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-6"
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
       onKeyDown={(e) => e.key === "Escape" && onClose()}
     >

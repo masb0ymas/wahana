@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Archive,
@@ -530,6 +531,15 @@ function ChatList({
       exitSelect();
     });
 
+  // Header pills. A grid tile drops the labels and grows the icons, so the tap target stays
+  // comfortable in the narrow cell: 28x28 there, 28px tall with a label in the chat pane.
+  const chipCls = "rounded-full px-2.5 py-1.5 text-[11px] font-medium capitalize whitespace-nowrap touch-none select-none";
+  const actCls = cn(
+    "inline-flex items-center justify-center gap-1 rounded-full font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
+    fill ? "p-1.5" : "px-2.5 py-1.5 text-xs",
+  );
+  const actIcon = fill ? 16 : 14;
+
   return (
     <div
       style={fill ? undefined : { width }}
@@ -568,42 +578,49 @@ function ChatList({
             </button>
           )}
         </div>
-        <div className="flex gap-1 items-center flex-wrap">
-          {tabOrder.map((f) => (
-            <button
-              key={f}
-              ref={(el) => {
-                if (el) chipRefs.current.set(f, el);
-                else chipRefs.current.delete(f);
-              }}
-              onPointerDown={(e) => onTabPointerDown(e, f)}
-              onPointerMove={onTabPointerMove}
-              onPointerUp={onTabPointerUp}
-              onPointerCancel={onTabPointerCancel}
-              onClick={() => {
-                if (suppressTabClick.current) {
-                  suppressTabClick.current = false;
-                  return;
-                }
-                setFilter(f);
-              }}
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[11px] font-medium capitalize whitespace-nowrap touch-none select-none",
-                filter === f ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
-                draggingTab === f && "cursor-grabbing opacity-70 scale-105",
-              )}
-            >
-              {f}
-            </button>
-          ))}
-          <span className="ml-auto flex items-center gap-1">
+        {/* In a grid tile the filters and the actions are two groups: `justify-between` keeps the
+            actions at the right edge while they fit beside the filters, and left-aligns them on
+            the line they wrap to, instead of leaving them floating right under the filters. The
+            regular chat pane keeps its single wrapping row (chips then actions). */}
+        <div className={cn("flex gap-1 items-center flex-wrap", fill && "justify-between gap-x-1 gap-y-1.5")}>
+          <div className="flex flex-wrap items-center gap-1">
+            {tabOrder.map((f) => (
+              <button
+                key={f}
+                ref={(el) => {
+                  if (el) chipRefs.current.set(f, el);
+                  else chipRefs.current.delete(f);
+                }}
+                onPointerDown={(e) => onTabPointerDown(e, f)}
+                onPointerMove={onTabPointerMove}
+                onPointerUp={onTabPointerUp}
+                onPointerCancel={onTabPointerCancel}
+                onClick={() => {
+                  if (suppressTabClick.current) {
+                    suppressTabClick.current = false;
+                    return;
+                  }
+                  setFilter(f);
+                }}
+                className={cn(
+                  chipCls,
+                  filter === f ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
+                  draggingTab === f && "cursor-grabbing opacity-70 scale-105",
+                )}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+          <div className={cn("flex items-center gap-1", !fill && "ml-auto")}>
             {!selecting && filter === "channels" && (
               <button
                 onClick={() => setFollowing(true)}
                 title="Follow a channel from its link"
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
+                aria-label="Follow a channel"
+                className={actCls}
               >
-                <Plus size={12} /> Follow
+                <Megaphone size={actIcon} /> {!fill && "Follow"}
               </button>
             )}
             {!selecting && totalUnread > 0 && (
@@ -611,37 +628,35 @@ function ChatList({
                 onClick={() => void markRead()}
                 disabled={busy}
                 title="Mark every chat as read"
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 disabled:opacity-50"
+                aria-label="Mark every chat as read"
+                className={cn(actCls, "disabled:opacity-50")}
               >
-                <CheckCheck size={12} /> Read all
+                <CheckCheck size={actIcon} /> {!fill && "Read all"}
               </button>
             )}
             {!selecting && (
-              <button
-                onClick={() => setNewChat(true)}
-                title="Start a chat with a phone number"
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
-              >
-                <Plus size={12} /> New chat
+              <button onClick={() => setNewChat(true)} title="Start a chat with a phone number" aria-label="New chat" className={actCls}>
+                <Plus size={actIcon} /> {!fill && "New chat"}
               </button>
             )}
             <button
               onClick={() => (selecting ? exitSelect() : setSelecting(true))}
-              title="Select chats"
+              title={selecting ? "Cancel selection" : "Select chats"}
+              aria-label={selecting ? "Cancel selection" : "Select chats"}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                actCls,
                 selecting ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
               )}
             >
-              <CheckSquare size={12} /> {selecting ? "Cancel" : "Select"}
+              {fill && selecting ? <X size={actIcon} /> : <CheckSquare size={actIcon} />} {!fill && (selecting ? "Cancel" : "Select")}
             </button>
-          </span>
+          </div>
         </div>
         {selecting && (
-          <div className="flex items-center gap-1.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-neutral-500 mr-auto">{picked.size} selected</span>
             <button
-              className="rounded px-1.5 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              className="rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
               onClick={() => setPicked(picked.size === shown.length ? new Set() : new Set(shown.map((c) => c.id)))}
             >
               {picked.size === shown.length && shown.length > 0 ? "None" : "All"}
@@ -649,23 +664,23 @@ function ChatList({
             <button
               disabled={busy || picked.size === 0}
               onClick={() => void markRead()}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40"
             >
-              <CheckCheck size={13} /> Read
+              <CheckCheck size={14} /> Read
             </button>
             <button
               disabled={busy || picked.size === 0}
               onClick={() => void archivePicked()}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40"
             >
-              <Archive size={13} /> {filter === "archived" ? "Unarchive" : "Archive"}
+              <Archive size={14} /> {filter === "archived" ? "Unarchive" : "Archive"}
             </button>
             <button
               disabled={busy || picked.size === 0}
               onClick={() => void deletePicked()}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-40"
             >
-              <Trash2 size={13} /> Delete
+              <Trash2 size={14} /> Delete
             </button>
           </div>
         )}
@@ -781,7 +796,10 @@ function RowMenu({
   const setMuted = useChatPrefs((s) => s.setMuted);
   const key = nativeChatKey(accountId, chat.id);
   const item = "w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800";
-  return (
+  // On `document.body`, so the menu sits at the pointer's viewport coordinates and its backdrop
+  // covers the window even when the chat list is a grid tile (whose layout containment would
+  // otherwise make `fixed` resolve against the tile).
+  return createPortal(
     <div
       className="fixed inset-0 z-40"
       onClick={onClose}
@@ -840,7 +858,8 @@ function RowMenu({
           <Tag size={13} /> Labels…
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2050,13 +2069,16 @@ function NewChatDialog({ chats, onOpen, onClose }: { chats: NativeChat[]; onOpen
     if (digits.length >= 8) start(known?.id ?? `${digits}@s.whatsapp.net`);
   };
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
           startNumber();
         }}
-        className="w-[380px] max-h-[70vh] flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl"
+        className="w-full max-w-[380px] max-h-full flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl"
       >
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <span className="font-semibold flex-1">Start chat</span>
@@ -2168,8 +2190,11 @@ function NativeForwardDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-[380px] max-h-[70vh] flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-[380px] max-h-full flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <span className="font-semibold flex-1">Forward to…</span>
           <button onClick={onClose}>

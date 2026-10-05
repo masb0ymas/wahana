@@ -20,9 +20,10 @@ import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
 import { usePins } from "@/store/pins";
 import { useReactions } from "@/store/reactions";
 import { useRevoked } from "@/store/revoked";
-import { notifyText } from "@/realtime/notify";
+import { notifyText, type NotifyTarget } from "@/realtime/notify";
 import { useSettings } from "@/store/settings";
 import { useAccountStyle } from "@/store/accountStyle";
+import { useAppLock } from "@/store/appLock";
 
 /**
  * Native WhatsApp accounts (no server needed), driven by the Rust client. `active` is the
@@ -61,6 +62,8 @@ interface State {
   /** The chat on screen per account (accountId → chatId), so an open chat does not raise a
    * notification while you are reading it. Several can be open at once in the grid. */
   openChats: Record<string, string>;
+  /** A chat a notification click asked to open, taken by that account's screen once it shows. */
+  pendingOpen: NotifyTarget | null;
   /** Per-account counter bumped when an account's chats or messages change, so that account's screen re-reads. */
   messageTick: Record<string, number>;
   /** Per-account counter bumped when an account's labels change (created, renamed, assigned). */
@@ -71,6 +74,9 @@ interface State {
   remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
   setOpenChat: (accountId: string, chatId: string | null) => void;
+  /** Switch to the account and queue the chat a notification click points at. */
+  openChatFromNotification: (target: NotifyTarget) => void;
+  clearPendingOpen: () => void;
 }
 
 const sortAccounts = (list: NativeAccount[]) => [...list].sort((a, b) => a.name.localeCompare(b.name));
@@ -88,6 +94,7 @@ export const useWhatsApp = create<State>((set, get) => ({
   active: null,
   qr: {},
   openChats: {},
+  pendingOpen: null,
   messageTick: {},
   labelsTick: {},
   async hydrate() {
@@ -146,6 +153,11 @@ export const useWhatsApp = create<State>((set, get) => ({
           }),
         );
         if (!useSettings.getState().notifications) continue;
+        // While locked, never leak the sender or the message body into a notification.
+        if (useAppLock.getState().locked) {
+          void notifyText("Wahana is locked", "Open the app to view new messages.");
+          continue;
+        }
         if (document.hasFocus() && openChats[id] === m.chatId) continue;
         if (isMutedUntil(useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)])) continue;
         const accountName = accounts.length > 1 && account ? ` · ${account.name}` : "";
@@ -153,7 +165,7 @@ export const useWhatsApp = create<State>((set, get) => ({
         const head = prefix ? `${prefix} ` : "";
         // A blurred chat must not leak its name or its content into an OS notification.
         if (useChatPrefs.getState().blurred[nativeChatKey(id, m.chatId)]) {
-          void notifyText(`${head}New message${accountName}`, "");
+          void notifyText(`${head}New message${accountName}`, "", { accountId: id, chatId: m.chatId });
           continue;
         }
         // Name the chat like the chat list does: a saved contact by name, anyone else by number.
@@ -161,7 +173,7 @@ export const useWhatsApp = create<State>((set, get) => ({
         const text = m.body || (m.kind === "media" ? "📎 Media" : "New message");
         // A group name alone does not say who wrote, so lead the body with the sender.
         const body = isGroup(m.chatId) ? `${m.senderName || displayId(m.senderId) || "Someone"}: ${text}` : text;
-        void notifyText(`${head}${title}${accountName}`, body);
+        void notifyText(`${head}${title}${accountName}`, body, { accountId: id, chatId: m.chatId });
       }
     });
     const accounts = sortAccounts(await nativeWa.accounts());
@@ -204,6 +216,13 @@ export const useWhatsApp = create<State>((set, get) => ({
       const { [accountId]: _, ...rest } = st.openChats;
       return { openChats: rest };
     });
+  },
+  openChatFromNotification(target) {
+    get().setActive(target.accountId);
+    set({ pendingOpen: target });
+  },
+  clearPendingOpen() {
+    set({ pendingOpen: null });
   },
 }));
 

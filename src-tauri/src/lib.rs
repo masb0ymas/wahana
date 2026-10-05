@@ -1,5 +1,6 @@
 mod channel_mex;
 mod media_cache;
+mod notifications;
 mod secrets;
 mod whatsapp;
 mod whatsapp_db;
@@ -11,7 +12,7 @@ use tauri::{
 };
 
 /// Bring the main window back (it is hidden, not closed, when the user closes it).
-fn show_main(app: &AppHandle) {
+pub(crate) fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
@@ -149,7 +150,8 @@ pub fn run() {
             whatsapp::wa_native_mark_all_read,
             whatsapp::wa_native_delete_chats,
             whatsapp::wa_native_pin_chat,
-            whatsapp::wa_native_mute_chat
+            whatsapp::wa_native_mute_chat,
+            notifications::notify_chat
         ])
         .setup(|app| {
             whatsapp::restore(app.handle());

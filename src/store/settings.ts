@@ -74,6 +74,15 @@ export interface Prefs {
   autoReplyDailyLimit: number;
   /** Minutes auto-reply stays quiet in a chat after the user wrote there themselves (0 = never). */
   autoReplyManualQuietMin: number;
+  // ── App lock ──
+  /** Master switch for the PIN lock. The PIN hash itself lives in the OS keychain. */
+  appLockEnabled: boolean;
+  /** Minutes of inactivity before the app locks itself. */
+  appLockIdleMinutes: number;
+  /** Lock when the window is hidden to the tray (the close button). */
+  appLockOnHide: boolean;
+  /** Ask for the PIN every time the app starts. */
+  appLockOnStart: boolean;
   // ── Per-account overrides ──
   // Keyed by account (`native:<accountId>`). A missing entry falls back to the built-in default
   // above; that default is not editable from a scope of its own anymore.
@@ -114,6 +123,10 @@ const DEFAULT_PREFS: Prefs = {
   autoReplyPaused: false,
   autoReplyDailyLimit: 300,
   autoReplyManualQuietMin: 15,
+  appLockEnabled: false,
+  appLockIdleMinutes: 5,
+  appLockOnHide: false,
+  appLockOnStart: false,
   sendTypingByAccount: {},
   readReceiptsByAccount: {},
   mediaByAccount: {},

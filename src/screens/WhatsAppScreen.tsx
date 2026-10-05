@@ -149,6 +149,8 @@ export function WhatsAppScreen({
 }) {
   const tick = useWhatsApp((s) => s.messageTick[account.id] ?? 0);
   const setOpenChat = useWhatsApp((s) => s.setOpenChat);
+  const pendingOpen = useWhatsApp((s) => s.pendingOpen);
+  const clearPendingOpen = useWhatsApp((s) => s.clearPendingOpen);
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
   const [chats, setChats] = useState<NativeChat[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
@@ -162,6 +164,14 @@ export function WhatsAppScreen({
     setChatId(null);
     setError(null);
   }, [account.id]);
+
+  // A notification click names a chat: open it once that account is the one on screen.
+  // Declared after the reset above so it wins on the render that switches accounts.
+  useEffect(() => {
+    if (!pendingOpen || pendingOpen.accountId !== account.id) return;
+    setChatId(pendingOpen.chatId);
+    clearPendingOpen();
+  }, [pendingOpen, account.id, clearPendingOpen]);
 
   useEffect(() => {
     setOpenChat(account.id, chatId);
@@ -950,6 +960,14 @@ function Conversation({
   const [info, setInfo] = useState(false);
   /** A group member whose profile was opened from a bubble; replaces the chat's own info panel. */
   const [profileId, setProfileId] = useState<string | null>(null);
+  // The file waiting to be sent, owned here so dropping it anywhere in the chat (not only on the
+  // composer) attaches it. Reset per chat because the screen keys this component by chat.
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [dragging, setDragging] = useState(false);
+  /** Nested enter/leave count so moving over child elements does not flicker the drop highlight. */
+  const dragDepth = useRef(0);
+  const attach = (file: File) => setAttachment({ file, preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null });
+  useEffect(() => () => void (attachment?.preview && URL.revokeObjectURL(attachment.preview)), [attachment]);
   const readMode = useReadReceipts(nativeAccountKey(account.id));
   const { title, pushName } = chatLabel(chat, chatId);
   const name = pushName ?? title;
@@ -1212,7 +1230,34 @@ function Conversation({
 
   return (
     <>
-      <div className="flex-1 min-w-0 flex flex-col chat-wallpaper">
+      <div
+        // Dropping a file anywhere in the chat attaches it, not only onto the composer.
+        onDragEnter={(e) => {
+          if (!e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          dragDepth.current++;
+          setDragging(true);
+        }}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+        }}
+        onDragLeave={(e) => {
+          if (!e.dataTransfer.types.includes("Files")) return;
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragDepth.current = 0;
+          setDragging(false);
+          const f = e.dataTransfer.files[0];
+          if (f) attach(f);
+        }}
+        className="relative flex-1 min-w-0 flex flex-col chat-wallpaper"
+      >
+        {/* Drawn above the header and composer, which would otherwise hide an inset ring. */}
+        {dragging && <div className="pointer-events-none absolute inset-0 z-20 ring-2 ring-inset ring-wa-dark" />}
         <header
           className={cn(
             "shrink-0 flex items-center bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800",
@@ -1416,6 +1461,9 @@ function Conversation({
             }}
             onCancelEdit={() => setEditing(null)}
             onSent={scrollToLatest}
+            attachment={attachment}
+            setAttachment={setAttachment}
+            attach={attach}
             compact={compact}
           />
         )}
@@ -2111,6 +2159,9 @@ function Composer({
   onCancelReply,
   onCancelEdit,
   onSent,
+  attachment,
+  setAttachment,
+  attach,
   compact,
 }: {
   account: NativeAccount;
@@ -2134,6 +2185,11 @@ function Composer({
   onCancelEdit: () => void;
   /** Pull the view to the newest message after sending one. */
   onSent: () => void;
+  /** The file waiting to be sent, owned by the conversation so a drop anywhere attaches it. */
+  attachment: Attachment | null;
+  setAttachment: (attachment: Attachment | null) => void;
+  /** Queue a file as the pending attachment (dropped, picked or pasted). */
+  attach: (file: File) => void;
   /** Stack the tools above the input, for a narrow container (e.g. a grid tile). */
   compact?: boolean;
 }) {
@@ -2151,8 +2207,6 @@ function Composer({
     [draftKey],
   );
   const [sending, setSending] = useState(false);
-  const [attachment, setAttachment] = useState<Attachment | null>(null);
-  const [dragging, setDragging] = useState(false);
   const [slash, setSlash] = useState<string | null>(null); // "/query" at the start of the composer
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null); // "@query" before the caret
   const pickedMentions = useRef<PickedMention[]>([]);
@@ -2256,10 +2310,6 @@ function Composer({
     el.style.height = Math.min(el.scrollHeight, 160) + "px";
   }, [text]);
 
-  useEffect(() => () => void (attachment?.preview && URL.revokeObjectURL(attachment.preview)), [attachment]);
-
-  const attach = (file: File) => setAttachment({ file, preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null });
-
   const sendSticker = async (webp: Blob) => {
     if (sending || !connected) return;
     setSending(true);
@@ -2342,22 +2392,9 @@ function Composer({
 
   return (
     <div
-      onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        const f = e.dataTransfer.files[0];
-        if (f) attach(f);
-      }}
       className={cn(
         "relative shrink-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800",
         compact ? "p-2 space-y-1.5" : "p-3 space-y-2",
-        dragging && "ring-2 ring-inset ring-wa-dark",
       )}
     >
       {slash !== null && (

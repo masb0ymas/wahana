@@ -4,6 +4,7 @@
 
 ### Added
 
+- App lock: set a 4-digit PIN under Settings → Security and Wahana requires it before the UI opens. Lock on demand (a sidebar lock button), after inactivity (1–60 minutes), when the window is hidden to the tray, and/or on app start. The PIN is stored as a PBKDF2-SHA256 hash in the OS keychain, a wrong PIN backs off after five tries, incoming-message notifications are redacted while locked, and a forgotten PIN can be reset by typing RESET.
 - Message bubbles have WhatsApp's tail shape. It sits at the bottom corner of the last bubble of each run from one speaker (so the newest message always has one), beside the group avatar. Stickers and deleted messages have no tail.
 - The conversation area has a WhatsApp-style doodle wallpaper behind the messages, in light and dark mode. It stays in place while the messages scroll.
 

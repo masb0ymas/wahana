@@ -62,6 +62,7 @@ const COMMANDS: &[&str] = &[
     "wa_native_message_info",
     "wa_native_mark_all_read",
     "wa_native_delete_chats",
+    "notify_chat",
 ];
 
 fn main() {

@@ -67,6 +67,7 @@
     "allow-wa-native-message-info",
     "allow-wa-native-mark-all-read",
     "allow-wa-native-delete-chats",
+    "allow-notify-chat",
     "core:default",
     "opener:default",
     "store:default",

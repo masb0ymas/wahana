@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import {
   MessageSquare,
   Smartphone,
@@ -12,8 +13,10 @@ import {
   Images,
   LayoutGrid,
   RotateCw,
+  Lock,
 } from "lucide-react";
 import { useSettings } from "@/store/settings";
+import { useAppLock } from "@/store/appLock";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { WelcomeScreen } from "@/screens/WelcomeScreen";
 import { AccountsScreen } from "@/screens/AccountsScreen";
@@ -31,6 +34,9 @@ import { resolveStyle, useAccountStyle } from "@/store/accountStyle";
 import { useAutoReply } from "@/realtime/useAutoReply";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConfirmHost } from "@/components/Confirm";
+import { LockScreen } from "@/components/LockScreen";
+import { useIdleLock } from "@/realtime/useIdleLock";
+import { useLockOnHide } from "@/realtime/useLockOnHide";
 import { useRevoked } from "@/store/revoked";
 import { usePins } from "@/store/pins";
 import { useDrafts } from "@/store/drafts";
@@ -47,6 +53,10 @@ type Tab = "chats" | "grid" | "status" | "features" | "media" | "accounts" | "se
 
 export default function App() {
   const { hydrated, hydrate } = useSettings();
+  const appLockEnabled = useSettings((s) => s.appLockEnabled);
+  const appLockPinSet = useAppLock((s) => s.pinSet);
+  const appLocked = useAppLock((s) => s.locked);
+  const hydrateAppLock = useAppLock((s) => s.hydrate);
   const waHydrated = useWhatsApp((s) => s.hydrated);
   const waAccounts = useWhatsApp((s) => s.accounts);
   // First run: nothing configured at all. `null` until both stores have loaded so the
@@ -70,6 +80,8 @@ export default function App() {
   useBroadcastRunner();
   useAutoReply();
   useAutoLabel();
+  useIdleLock();
+  useLockOnHide();
   // Everything is per account now: move legacy global Knowledge/quick-reply rows to the first
   // account once, so they are not orphaned. Idempotent, so it also covers a restored backup.
   const qc = useQueryClient();
@@ -96,16 +108,34 @@ export default function App() {
     void hydrateDrafts();
     void hydrateChatPrefs();
     void hydrateAccountStyles();
+    void hydrateAppLock();
     hydrateWa().catch(console.error);
-  }, [hydrate, hydrateReactions, hydrateRevoked, hydratePins, hydrateDrafts, hydrateChatPrefs, hydrateAccountStyles, hydrateWa]);
+  }, [
+    hydrate,
+    hydrateReactions,
+    hydrateRevoked,
+    hydratePins,
+    hydrateDrafts,
+    hydrateChatPrefs,
+    hydrateAccountStyles,
+    hydrateWa,
+    hydrateAppLock,
+  ]);
 
   useEffect(() => {
     if (hydrated && waHydrated && welcome === null) setWelcome(waAccounts.length === 0);
   }, [hydrated, waHydrated, welcome, waAccounts.length]);
 
+  // Lock on start: once the prefs and the PIN are known, gate the app behind the PIN.
+  useEffect(() => {
+    if (hydrated && appLockEnabled && appLockPinSet && useSettings.getState().appLockOnStart) useAppLock.getState().lock();
+  }, [hydrated, appLockEnabled, appLockPinSet]);
+
   // Global shortcuts: ⌘/Ctrl+1–6 switch tabs, ⌘/Ctrl+K focus chat search, ⌘/Ctrl+, opens settings.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // While locked, swallow global shortcuts so ⌘R cannot reload away the lock.
+      if (useAppLock.getState().locked) return;
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       const tabs: Record<string, Tab> = {
@@ -147,6 +177,25 @@ export default function App() {
     };
   }, []);
 
+  // A notification click asks for the chats tab and one conversation (the native side already
+  // raised the window and emitted the event).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen<{ accountId: string; chatId: string }>("wahana:notification-click", (e) => {
+      setWelcome(false);
+      setTab("chats");
+      useWhatsApp.getState().openChatFromNotification(e.payload);
+    }).then((un) => {
+      if (cancelled) un();
+      else unlisten = un;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   if (!hydrated) {
     return (
       <div className="h-full grid place-items-center text-neutral-500">
@@ -168,6 +217,7 @@ export default function App() {
   return (
     <div className="h-full flex">
       <ConfirmHost />
+      {appLocked && <LockScreen />}
       <aside className="w-16 shrink-0 flex flex-col items-center py-4 gap-2 bg-wa-teal text-white/80">
         {nav.map((n) => (
           <button
@@ -204,14 +254,26 @@ export default function App() {
             )}
           </button>
         ))}
-        <button
-          title="Reload (⌘R)"
-          aria-label="Reload"
-          onClick={() => window.location.reload()}
-          className="mt-auto w-11 h-11 rounded-xl grid place-items-center hover:bg-white/10 transition"
-        >
-          <RotateCw size={20} />
-        </button>
+        <div className="mt-auto flex flex-col items-center gap-2">
+          {appLockEnabled && appLockPinSet && (
+            <button
+              title="Lock now"
+              aria-label="Lock now"
+              onClick={() => useAppLock.getState().lock()}
+              className="w-11 h-11 rounded-xl grid place-items-center hover:bg-white/10 transition"
+            >
+              <Lock size={20} />
+            </button>
+          )}
+          <button
+            title="Reload (⌘R)"
+            aria-label="Reload"
+            onClick={() => window.location.reload()}
+            className="w-11 h-11 rounded-xl grid place-items-center hover:bg-white/10 transition"
+          >
+            <RotateCw size={20} />
+          </button>
+        </div>
       </aside>
       <main className="flex-1 min-w-0 flex flex-col">
         {updater.update && (

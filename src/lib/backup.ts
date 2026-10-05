@@ -26,6 +26,7 @@ export interface Backup {
     pinned: Record<string, number>;
     muted: Record<string, number>;
     archived: Record<string, 1>;
+    blurred?: Record<string, 1>;
     autoTranslate?: Record<string, { in?: string; out?: string }>;
     takeover?: Record<string, Takeover>;
   };
@@ -138,6 +139,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
       pinned: (await chatPrefsStore.get("pinned")) ?? {},
       muted: (await chatPrefsStore.get("muted")) ?? {},
       archived: (await chatPrefsStore.get("archived")) ?? {},
+      blurred: (await chatPrefsStore.get("blurred")) ?? {},
       autoTranslate: (await chatPrefsStore.get("autoTranslate")) ?? {},
       takeover: (await chatPrefsStore.get("takeover")) ?? {},
     },
@@ -222,7 +224,7 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
     // Merge into the live store (it owns the file and flushes its in-memory state over it).
     const cp = await load("chat-prefs.json", { autoSave: true, defaults: {} });
     const live = useChatPrefs.getState();
-    for (const k of ["pinned", "muted", "archived", "autoTranslate", "takeover"] as const) {
+    for (const k of ["pinned", "muted", "archived", "blurred", "autoTranslate", "takeover"] as const) {
       await cp.set(k, { ...live[k], ...(b.chatPrefs[k] ?? {}) });
     }
     await live.hydrate();

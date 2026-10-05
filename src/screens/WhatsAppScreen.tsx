@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   CheckCheck,
   BellOff,
+  EyeOff,
   ChevronLeft,
   Languages,
   Loader2,
@@ -400,6 +401,7 @@ function ChatList({
   };
   const pinned = useChatPrefs((s) => s.pinned);
   const muted = useChatPrefs((s) => s.muted);
+  const blurred = useChatPrefs((s) => s.blurred);
   const labelsTick = useWhatsApp((s) => s.labelsTick[account.id] ?? 0);
 
   useEffect(() => {
@@ -666,6 +668,7 @@ function ChatList({
                   active={!selecting && c.id === selected}
                   pinned={!!pinned[key]}
                   muted={isMutedUntil(muted[key])}
+                  blurred={!!blurred[key]}
                   chips={chips}
                   selecting={selecting}
                   checked={picked.has(c.id)}
@@ -689,6 +692,7 @@ function ChatList({
           chat={menu.chat}
           pinned={!!pinned[nativeChatKey(account.id, menu.chat.id)]}
           muted={muted[nativeChatKey(account.id, menu.chat.id)]}
+          blurred={!!blurred[nativeChatKey(account.id, menu.chat.id)]}
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
@@ -711,12 +715,13 @@ function ChatList({
   );
 }
 
-/** Right-click menu on a native chat: pin, mute, labels. */
+/** Right-click menu on a native chat: pin, mute, blur, labels. */
 function RowMenu({
   accountId,
   chat,
   pinned,
   muted,
+  blurred,
   x,
   y,
   onClose,
@@ -726,6 +731,7 @@ function RowMenu({
   chat: NativeChat;
   pinned: boolean;
   muted: number | undefined;
+  blurred: boolean;
   x: number;
   y: number;
   onClose: () => void;
@@ -769,6 +775,16 @@ function RowMenu({
             onClose();
           }}
         />
+        <button
+          className={item}
+          title="Blur the preview in the chat list and message bubbles until hovered"
+          onClick={() => {
+            togglePref("blurred", key);
+            onClose();
+          }}
+        >
+          <EyeOff size={13} /> {blurred ? "Remove blur" : "Blur preview"}
+        </button>
         <button className={item} onClick={onLabels}>
           <Tag size={13} /> Labels…
         </button>
@@ -784,6 +800,7 @@ const ChatRow = memo(function ChatRow({
   active,
   pinned,
   muted,
+  blurred,
   chips,
   selecting,
   checked,
@@ -796,6 +813,7 @@ const ChatRow = memo(function ChatRow({
   active: boolean;
   pinned: boolean;
   muted: boolean;
+  blurred: boolean;
   chips: { name: string; color: string }[];
   selecting: boolean;
   checked: boolean;
@@ -809,6 +827,9 @@ const ChatRow = memo(function ChatRow({
   const body = stripWaMarkdown(chat.lastText);
   const sender = group ? (chat.lastFromMe ? "You" : chat.lastSender.split(/\s+/)[0]) : "";
   const preview = sender ? `${sender}: ${body}` : body;
+  // translateZ(0) forces GPU compositing so WKWebView uses grayscale antialiasing; without it the
+  // blurred text rasterizes with subpixel AA and shows a coloured (purple) fringe.
+  const blurCls = blurred && "blur-[3px] transform-gpu group-hover:blur-none transition-[filter] duration-150";
   // An unsent draft replaces the preview, like WhatsApp, except in the chat being typed in.
   const draft = useDrafts((s) => (active ? "" : (s.drafts[nativeChatKey(accountId, chat.id)] ?? "")));
   return (
@@ -816,7 +837,7 @@ const ChatRow = memo(function ChatRow({
       onClick={onClick}
       onContextMenu={onMenu}
       className={cn(
-        "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
+        "group w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
         (active || checked) && "bg-neutral-100 dark:bg-neutral-800",
       )}
     >
@@ -838,9 +859,10 @@ const ChatRow = memo(function ChatRow({
           ) : channel ? (
             <Megaphone size={12} className="text-neutral-400 shrink-0" />
           ) : null}
-          <span className="font-medium truncate shrink-0 max-w-[70%]">{title}</span>
-          {pushName && <span className="text-[11px] text-neutral-400 truncate">~{pushName}</span>}
+          <span className={cn("font-medium truncate shrink-0 max-w-[70%]", blurCls)}>{title}</span>
+          {pushName && <span className={cn("text-[11px] text-neutral-400 truncate", blurCls)}>~{pushName}</span>}
           {muted && <BellOff size={12} className="shrink-0 text-neutral-400" />}
+          {blurred && <EyeOff size={12} className="shrink-0 text-neutral-400" />}
           {pinned && <Pin size={12} className="shrink-0 text-neutral-400" />}
           {chat.lastTimestamp > 0 && (
             <span className="ml-auto shrink-0 text-[11px] text-neutral-400">{formatTime(secs(chat.lastTimestamp))}</span>
@@ -851,6 +873,7 @@ const ChatRow = memo(function ChatRow({
             className={cn(
               "text-xs truncate flex-1",
               chat.unread ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500",
+              blurCls,
             )}
           >
             {draft ? (
@@ -934,6 +957,7 @@ function Conversation({
   const name = pushName ?? title;
   const prefsKey = convKey(account.id, chatId);
   const autoTranslate = useChatPrefs((s) => s.autoTranslate[prefsKey]);
+  const blurred = useChatPrefs((s) => !!s.blurred[nativeChatKey(account.id, chatId)]);
 
   // Whatever arrives in the chat on screen is read as it lands. Lives here (not in the
   // screen) so an open conversation is marked read wherever it is embedded, e.g. a grid tile.
@@ -1202,7 +1226,7 @@ function Conversation({
             </button>
           )}
           <button
-            className="flex items-center gap-3 min-w-0 flex-1 text-left"
+            className="group flex items-center gap-3 min-w-0 flex-1 text-left"
             onClick={() => {
               setProfileId(null);
               setInfo((v) => !v);
@@ -1210,7 +1234,7 @@ function Conversation({
             title={group ? "Group info" : channel ? "Channel info" : "Contact info"}
           >
             <Avatar src={picture} name={name} size={36} />
-            <div className="min-w-0">
+            <div className={cn("min-w-0", blurred && "blur-[3px] transform-gpu group-hover:blur-none transition-[filter] duration-150")}>
               <div className="font-medium truncate">{title}</div>
               <div className="text-xs truncate text-neutral-500">
                 {group
@@ -1344,6 +1368,7 @@ function Conversation({
                     avatar={!group ? "none" : showAvatar ? "show" : "space"}
                     avatarChatId={m.senderPhone ? `${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net` : null}
                     pinned={isPinned(pins, prefsKey, m.id)}
+                    blurred={blurred}
                     onMenu={onMenu}
                     onPickReply={setDraftPick}
                     onJumpTo={(reply) => {
@@ -1608,6 +1633,7 @@ const Bubble = memo(function Bubble({
   avatar,
   avatarChatId,
   pinned,
+  blurred,
   onMenu,
   onPickReply,
   onJumpTo,
@@ -1623,6 +1649,8 @@ const Bubble = memo(function Bubble({
   avatar: "show" | "space" | "none";
   avatarChatId: string | null;
   pinned: boolean;
+  /** Blur the bubble content until hovered (per-chat privacy). */
+  blurred: boolean;
   onMenu: (m: NativeMessage, pos: { x: number; y: number }) => void;
   /** Put a suggested reply into the composer. */
   onPickReply?: (text: string) => void;
@@ -1692,6 +1720,7 @@ const Bubble = memo(function Bubble({
                 : mine
                   ? "bg-[#d9fdd3] dark:bg-wa-teal text-neutral-900 dark:text-white shadow-sm"
                   : "bg-white dark:bg-neutral-800 shadow-sm",
+            blurred && "blur-[3px] transform-gpu hover:blur-none transition-[filter] duration-150",
           )}
         >
           {revoked && (

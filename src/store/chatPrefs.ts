@@ -10,7 +10,7 @@ let storePromise: Promise<Store> | null = null;
 const store = () => (storePromise ??= load(STORE_FILE, { autoSave: true, defaults: {} }));
 let flush: ReturnType<typeof setTimeout> | undefined;
 
-type Flag = "pinned" | "archived";
+type Flag = "pinned" | "archived" | "blurred";
 /** `muted` value: -1 = until I unmute, otherwise the epoch ms the mute ends. */
 export const MUTE_FOREVER = -1;
 /** True while a stored mute value is in effect (values from older versions, `1`, mean forever). */
@@ -33,6 +33,8 @@ interface State {
   pinned: Record<string, number>; // value = order (timestamp of pinning)
   muted: Record<string, number>;
   archived: Record<string, 1>;
+  /** Chats whose preview and bubbles are blurred until hovered. */
+  blurred: Record<string, 1>;
   autoTranslate: Record<string, AutoTranslate>;
   takeover: Record<string, Takeover>;
   hydrate: () => Promise<void>;
@@ -48,6 +50,7 @@ export const useChatPrefs = create<State>((set) => ({
   pinned: {},
   muted: {},
   archived: {},
+  blurred: {},
   autoTranslate: {},
   takeover: {},
   async hydrate() {
@@ -56,6 +59,7 @@ export const useChatPrefs = create<State>((set) => ({
       pinned: (await s.get<Record<string, number>>("pinned")) ?? {},
       muted: (await s.get<Record<string, number>>("muted")) ?? {},
       archived: (await s.get<Record<string, 1>>("archived")) ?? {},
+      blurred: (await s.get<Record<string, 1>>("blurred")) ?? {},
       autoTranslate: (await s.get<Record<string, AutoTranslate>>("autoTranslate")) ?? {},
       takeover: (await s.get<Record<string, Takeover>>("takeover")) ?? {},
     });
@@ -112,6 +116,7 @@ function schedule() {
         await s.set("pinned", st.pinned);
         await s.set("muted", st.muted);
         await s.set("archived", st.archived);
+        await s.set("blurred", st.blurred);
         await s.set("autoTranslate", st.autoTranslate);
         await s.set("takeover", st.takeover);
       }),

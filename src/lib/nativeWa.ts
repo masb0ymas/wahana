@@ -53,6 +53,20 @@ export interface NativeMedia {
   thumbnail: string | null;
 }
 
+/** The structured content of a poll, location or contact message; only the part matching
+ * the message's `kind` is set. */
+export interface NativeInteractive {
+  poll?: { question: string; options: string[]; multiple: boolean };
+  location?: {
+    latitude: number;
+    longitude: number;
+    name: string | null;
+    address: string | null;
+    live: boolean;
+  };
+  contacts?: { name: string; phone: string | null }[];
+}
+
 export interface NativeMessage {
   id: string;
   chatId: string;
@@ -61,11 +75,13 @@ export interface NativeMessage {
   senderPhone: string | null;
   /** The sender's bare JID for a message from someone else (`…@lid` or `…@s.whatsapp.net`); null for our own. */
   senderId: string | null;
-  kind: "text" | "media" | "unsupported";
+  kind: "text" | "media" | "unsupported" | "poll" | "location" | "contact";
   /** The text, or a media message's caption. */
   body: string;
   timestamp: number;
   media: NativeMedia | null;
+  /** The structured content of a poll, location or contact message. */
+  interactive: NativeInteractive | null;
   /** Delivery state of a message I sent: 0 pending, 1 sent, 2 delivered, 3 read, 4 played. */
   ack: number;
   /** When it was deleted for everyone (unix ms); its content is kept to show what it was. */

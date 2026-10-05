@@ -79,6 +79,7 @@ import { usePicture } from "@/screens/whatsapp/usePicture";
 import { useNativeTyping } from "@/screens/whatsapp/useNativeTyping";
 import { TypingBubble } from "@/components/TypingBubble";
 import { NativeMediaView, cacheSentMedia, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
+import { ContactCard, LocationCard, PollCard } from "@/screens/whatsapp/NativeInteractive";
 import { readReceiptsFor, sendTypingFor, useReadReceipts, useSettings } from "@/store/settings";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { useDrafts } from "@/store/drafts";
@@ -231,7 +232,7 @@ export function WhatsAppScreen({
                 onOpenChat={(ids, reply, jump) => {
                   setPendingReply(reply ?? null);
                   setPendingJump(jump ?? null);
-                  setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!);
+                  setChatId(pickChat(chats, ids));
                 }}
                 initialReply={pendingReply}
                 onReplyUsed={() => setPendingReply(null)}
@@ -285,7 +286,7 @@ export function WhatsAppScreen({
           onOpenChat={(ids, reply, jump) => {
             setPendingReply(reply ?? null);
             setPendingJump(jump ?? null);
-            setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!);
+            setChatId(pickChat(chats, ids));
           }}
           initialReply={pendingReply}
           onReplyUsed={() => setPendingReply(null)}
@@ -1469,6 +1470,7 @@ function Conversation({
                       else setJumpTo(bareId(reply.id));
                     }}
                     onProfile={setProfileId}
+                    onOpenNumber={(phone) => onOpenChat([`${phone.replace(/\D/g, "")}@s.whatsapp.net`])}
                   />
                 </ErrorBoundary>
               </div>
@@ -1565,7 +1567,7 @@ function Conversation({
                     })
             }
             onPin={channel || menu.m.revokedAt ? undefined : (secs) => void pinMessage(menu.m, secs)}
-            onForward={menu.m.revokedAt ? undefined : () => setForward(menu.m)}
+            onForward={menu.m.revokedAt || menu.m.kind === "poll" ? undefined : () => setForward(menu.m)}
             onInfo={menu.m.fromMe && !channel ? () => setInfoFor(menu.m) : undefined}
             onClose={() => setMenu(null)}
           />
@@ -1736,6 +1738,7 @@ const Bubble = memo(function Bubble({
   onPickReply,
   onJumpTo,
   onProfile,
+  onOpenNumber,
 }: {
   accountId: string;
   connected: boolean;
@@ -1757,6 +1760,8 @@ const Bubble = memo(function Bubble({
   /** Open the quoted message: jump within this chat, or switch to the chat that stores it. */
   onJumpTo: (reply: NativeReply) => void;
   onProfile: (chatId: string) => void;
+  /** Open (or start) the chat with a phone number, e.g. from a shared contact. */
+  onOpenNumber: (phone: string) => void;
 }) {
   const mine = m.fromMe;
   const sticker = m.media?.kind === "sticker";
@@ -1922,7 +1927,13 @@ const Bubble = memo(function Bubble({
               <div className={cn(m.body && "mb-1")}>
                 <NativeMediaView accountId={accountId} message={m} connected={connected} />
               </div>
-            ) : m.kind !== "text" ? (
+            ) : m.kind === "poll" && m.interactive?.poll ? (
+              <PollCard data={m.interactive.poll} />
+            ) : m.kind === "location" && m.interactive?.location ? (
+              <LocationCard data={m.interactive.location} />
+            ) : m.kind === "contact" && m.interactive?.contacts ? (
+              <ContactCard data={m.interactive.contacts} onOpen={onOpenNumber} />
+            ) : m.kind === "media" || m.kind === "unsupported" ? (
               <div className="italic text-neutral-500 dark:text-neutral-400">
                 {m.kind === "media" ? "📎 Media (not available for this older message)" : "Unsupported message"}
               </div>
@@ -1934,8 +1945,8 @@ const Bubble = memo(function Bubble({
                 </div>
               ) : null,
             )}
-            {m.body && !m.media && !revoked && <LinkPreviewCard message={m} />}
-            {m.body && !m.statusMention && (
+            {m.body && !m.media && !m.interactive && !revoked && <LinkPreviewCard message={m} />}
+            {m.body && !m.statusMention && !m.interactive && (
               <div className={cn("break-words", revoked && "line-through decoration-neutral-400")}>
                 <div className={cn(!bodyOpen && longBody && "line-clamp-6")}>
                   <WaMarkdown text={m.body} mentions={group ? mentionFor : undefined} />
@@ -2004,6 +2015,20 @@ const Bubble = memo(function Bubble({
 });
 
 /** Start a chat: pick a chat you already have, or type a phone number with its country code (no "+" needed). */
+/** The chat to open for `ids`: the first one already known, else one known under the same
+ * phone number (it may live under its privacy id, @lid), else the last id as a new chat. */
+function pickChat(chats: NativeChat[], ids: string[]): string {
+  const known = ids.find((id) => chats.some((c) => c.id === id));
+  if (known) return known;
+  for (const id of ids) {
+    if (!id.endsWith("@s.whatsapp.net")) continue;
+    const digits = id.split("@")[0];
+    const byPhone = chats.find((c) => c.phone && c.phone.replace(/\D/g, "") === digits);
+    if (byPhone) return byPhone.id;
+  }
+  return ids[ids.length - 1]!;
+}
+
 function NewChatDialog({ chats, onOpen, onClose }: { chats: NativeChat[]; onOpen: (id: string) => void; onClose: () => void }) {
   const [value, setValue] = useState("");
   const digits = value.replace(/\D/g, "");

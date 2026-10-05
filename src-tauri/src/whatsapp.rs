@@ -230,6 +230,17 @@ struct ChatsPayload {
 struct MessagesPayload {
     id: String,
     messages: Vec<MessageView>,
+    /// How the chat is labelled, so a notification can name it like the chat list does:
+    /// the saved contact name, else the phone number (a group's subject counts as a name).
+    chat: Option<ChatLabelView>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatLabelView {
+    name: String,
+    saved: bool,
+    phone: Option<String>,
 }
 
 /// Emitted with just an account id when that account's non-chat data changed (statuses, labels).
@@ -870,12 +881,24 @@ fn record_message(
     let mut view = message.view;
     view.media = message.media.as_ref().map(StoredMedia::info);
     view.album_id = message.album.clone();
+    let chat = account
+        .db
+        .lock()
+        .unwrap()
+        .chat_label(&view.chat_id)
+        .ok()
+        .map(|l| ChatLabelView {
+            name: l.name,
+            saved: l.saved,
+            phone: l.phone,
+        });
     let _ = app.emit_to(
         "main",
         "wa_native:messages",
         MessagesPayload {
             id: account.id.clone(),
             messages: vec![view],
+            chat,
         },
     );
     emit_account(app, account);

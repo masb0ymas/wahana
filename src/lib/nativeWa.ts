@@ -131,9 +131,18 @@ export interface NativeQr {
   timeoutMs: number;
 }
 
+/** How a chat is labelled, as the backend resolves it: saved name, else phone. */
+export interface NativeChatLabel {
+  name: string;
+  saved: boolean;
+  phone: string | null;
+}
+
 export interface NativeMessageBatch {
   id: string;
   messages: NativeMessage[];
+  /** How the chat is labelled, when known (absent on older backends). */
+  chat?: NativeChatLabel;
 }
 
 /** An incoming reaction to a message. */

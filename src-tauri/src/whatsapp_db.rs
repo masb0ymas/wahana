@@ -123,6 +123,15 @@ pub struct Who {
     pub phone: Option<String>,
 }
 
+/// How a chat is labelled for the chat list and notifications: the saved contact name (or a
+/// group's subject), else the phone number, else a fallback.
+pub struct ChatLabel {
+    pub name: String,
+    /// Whether `name` came from your contacts (or the chat is a group).
+    pub saved: bool,
+    pub phone: Option<String>,
+}
+
 /// Who an id is, as far as this account knows.
 #[derive(Default)]
 struct Resolved {
@@ -799,6 +808,25 @@ impl ChatDb {
         })
     }
 
+    /// How a chat is labelled: the saved contact name (a group's subject counts as saved), else
+    /// the phone number, else a fallback. Shared by the chat list and notifications so both
+    /// name a chat the same way.
+    pub fn chat_label(&self, id: &str) -> rusqlite::Result<ChatLabel> {
+        let Resolved { name, phone } = self.resolve(id)?;
+        let group = id.ends_with("@g.us");
+        Ok(ChatLabel {
+            saved: group
+                || name
+                    .as_ref()
+                    .is_some_and(|(_, source)| *source >= NameSource::Contact as i64),
+            name: name
+                .map(|(n, _)| n)
+                .or_else(|| phone.clone())
+                .unwrap_or_else(|| fallback_name(id)),
+            phone: if group { None } else { phone },
+        })
+    }
+
     /// The phone-number id of a user, if known: itself, or what its privacy id maps to.
     pub fn pn_for(&self, id: &str) -> rusqlite::Result<Option<String>> {
         if id.ends_with("@s.whatsapp.net") {
@@ -827,7 +855,7 @@ impl ChatDb {
 
     pub fn chats(&self) -> rusqlite::Result<Vec<ChatInfo>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, fallback_name, last_text, last_timestamp, last_from_me, last_sender_id, last_sender, unread,
+            "SELECT id, last_text, last_timestamp, last_from_me, last_sender_id, last_sender, unread,
                     (SELECT ack FROM messages m WHERE m.chat_id = chats.id AND m.from_me = 1
                      ORDER BY m.timestamp DESC LIMIT 1)
              FROM chats WHERE id != 'status@broadcast' ORDER BY last_timestamp DESC",
@@ -836,13 +864,12 @@ impl ChatDb {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, i64>(3)?,
-                r.get::<_, bool>(4)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, bool>(3)?,
+                r.get::<_, String>(4)?,
                 r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?,
-                r.get::<_, u32>(7)?,
-                r.get::<_, Option<u8>>(8)?,
+                r.get::<_, u32>(6)?,
+                r.get::<_, Option<u8>>(7)?,
             ))
         })?;
         let mut senders: HashMap<String, Resolved> = HashMap::new();
@@ -850,7 +877,6 @@ impl ChatDb {
         for row in rows {
             let (
                 id,
-                fallback,
                 last_text,
                 last_timestamp,
                 last_from_me,
@@ -859,7 +885,7 @@ impl ChatDb {
                 unread,
                 last_ack,
             ) = row?;
-            let who = self.resolve(&id)?;
+            let label = self.chat_label(&id)?;
             let last_sender = if sender_id.is_empty() {
                 sender
             } else {
@@ -873,7 +899,6 @@ impl ChatDb {
                     .or_else(|| s.phone.clone())
                     .unwrap_or(sender)
             };
-            let group = id.ends_with("@g.us");
             let muted_until = self.mute_for(&id)?;
             let community = self
                 .conn
@@ -892,17 +917,9 @@ impl ChatDb {
             chats.push(ChatInfo {
                 muted_until,
                 community,
-                saved: group
-                    || who
-                        .name
-                        .as_ref()
-                        .is_some_and(|(_, source)| *source >= NameSource::Contact as i64),
-                name: who
-                    .name
-                    .map(|(n, _)| n)
-                    .or_else(|| who.phone.clone())
-                    .unwrap_or(fallback),
-                phone: if group { None } else { who.phone },
+                saved: label.saved,
+                name: label.name,
+                phone: label.phone,
                 id,
                 last_text,
                 last_timestamp,

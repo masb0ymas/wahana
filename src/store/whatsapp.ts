@@ -14,7 +14,8 @@ import {
   type NativeQr,
 } from "@/lib/nativeWa";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
-import { convKey } from "@/lib/utils";
+import { convKey, displayId, isGroup } from "@/lib/utils";
+import { chatLabel } from "@/lib/chatLabel";
 import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
 import { usePins } from "@/store/pins";
 import { useReactions } from "@/store/reactions";
@@ -120,7 +121,7 @@ export const useWhatsApp = create<State>((set, get) => ({
         from: r.fromMe ? null : r.chatId,
       }),
     );
-    await onNativeMessages(({ id, messages }) => {
+    await onNativeMessages(({ id, messages, chat }) => {
       set((st) => ({ messageTick: bumpTick(st.messageTick, id) }));
       const { accounts, openChats } = get();
       const account = accounts.find((a) => a.id === id);
@@ -147,10 +148,20 @@ export const useWhatsApp = create<State>((set, get) => ({
         if (!useSettings.getState().notifications) continue;
         if (document.hasFocus() && openChats[id] === m.chatId) continue;
         if (isMutedUntil(useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)])) continue;
-        const sender = m.senderName || `+${m.chatId.split("@")[0]}`;
         const accountName = accounts.length > 1 && account ? ` · ${account.name}` : "";
-        const icon = useAccountStyle.getState().styles[id]?.icon;
-        void notifyText(`${icon ? `${icon} ` : ""}${sender}${accountName}`, m.body || (m.kind === "media" ? "📎 Media" : "New message"));
+        const prefix = useAccountStyle.getState().styles[id]?.icon;
+        const head = prefix ? `${prefix} ` : "";
+        // A blurred chat must not leak its name or its content into an OS notification.
+        if (useChatPrefs.getState().blurred[nativeChatKey(id, m.chatId)]) {
+          void notifyText(`${head}New message${accountName}`, "");
+          continue;
+        }
+        // Name the chat like the chat list does: a saved contact by name, anyone else by number.
+        const title = chat ? chatLabel(chat, m.chatId).title : m.senderName || displayId(m.chatId);
+        const text = m.body || (m.kind === "media" ? "📎 Media" : "New message");
+        // A group name alone does not say who wrote, so lead the body with the sender.
+        const body = isGroup(m.chatId) ? `${m.senderName || displayId(m.senderId) || "Someone"}: ${text}` : text;
+        void notifyText(`${head}${title}${accountName}`, body);
       }
     });
     const accounts = sortAccounts(await nativeWa.accounts());

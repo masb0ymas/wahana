@@ -35,6 +35,7 @@ import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
 import { LANGUAGES, aiConfigured, langName, translate } from "@/lib/ai";
 import { formatBytes } from "@/lib/mediaCache";
 import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isDirect, isGroup } from "@/lib/utils";
+import { chatLabel } from "@/lib/chatLabel";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import { applyMentions, memberLabel, mentionResolver, type PickedMention } from "@/lib/mentions";
 import {
@@ -90,20 +91,6 @@ import { useWhatsApp } from "@/store/whatsapp";
 
 /** Timestamps from the backend are milliseconds; the shared formatters take seconds. */
 const secs = (ms: number) => Math.floor(ms / 1000);
-
-/**
- * How WhatsApp itself labels a chat: a saved contact by its name; anyone else by their
- * number, with the name they gave themselves as "~name".
- */
-function chatLabel(chat: NativeChat | undefined, chatId: string) {
-  if (!chat) return { title: isChannel(chatId) ? displayId(chatId) : chatId.split("@")[0]!, pushName: null };
-  if (chat.saved || !chat.phone) {
-    // A channel with no name yet falls back to "Channel 123456", not its raw id.
-    const unnamed = isChannel(chatId) && chat.name === chatId.split("@")[0];
-    return { title: unnamed ? displayId(chatId) : chat.name, pushName: null };
-  }
-  return { title: chat.phone, pushName: chat.name !== chat.phone ? chat.name : null };
-}
 
 type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels";
 

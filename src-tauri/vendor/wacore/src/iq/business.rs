@@ -1,0 +1,248 @@
+//! Business profile IQ specification (namespace `w:biz`).
+
+use crate::WireEnum;
+use crate::iq::node::optional_attr;
+use crate::iq::spec::IqSpec;
+use crate::request::InfoQuery;
+use wacore_binary::builder::NodeBuilder;
+use wacore_binary::{Jid, Server};
+use wacore_binary::{NodeContent, NodeContentRef, NodeRef};
+
+#[derive(Debug, Clone, PartialEq, Eq, WireEnum)]
+pub enum DayOfWeek {
+    #[wire = "sun"]
+    Sunday,
+    #[wire = "mon"]
+    Monday,
+    #[wire = "tue"]
+    Tuesday,
+    #[wire = "wed"]
+    Wednesday,
+    #[wire = "thu"]
+    Thursday,
+    #[wire = "fri"]
+    Friday,
+    #[wire = "sat"]
+    Saturday,
+    #[wire_fallback]
+    Other(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, WireEnum)]
+pub enum BusinessHourMode {
+    #[wire = "open_24h"]
+    Open24H,
+    #[wire = "specific_hours"]
+    SpecificHours,
+    #[wire = "appointment_only"]
+    AppointmentOnly,
+    #[wire_fallback]
+    Other(String),
+}
+
+fn node_text(node: &NodeRef<'_>) -> Option<String> {
+    match node.content.as_ref() {
+        Some(NodeContentRef::String(s)) => Some(s.to_string()),
+        Some(NodeContentRef::Bytes(b)) => std::str::from_utf8(b).ok().map(|s| s.to_string()),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[non_exhaustive]
+pub struct BusinessProfile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wid: Option<Jid>,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    pub website: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<BusinessCategory>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    pub business_hours: BusinessHours,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[non_exhaustive]
+pub struct BusinessHours {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub business_config: Option<Vec<BusinessHoursConfig>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[non_exhaustive]
+pub struct BusinessHoursConfig {
+    pub day_of_week: DayOfWeek,
+    pub mode: BusinessHourMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_time: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_time: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[non_exhaustive]
+pub struct BusinessCategory {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct BusinessProfileSpec {
+    pub jid: Jid,
+}
+
+impl BusinessProfileSpec {
+    pub fn new(jid: &Jid) -> Self {
+        Self { jid: jid.clone() }
+    }
+}
+
+impl IqSpec for BusinessProfileSpec {
+    type Response = Option<BusinessProfile>;
+
+    fn build_iq(&self) -> InfoQuery<'static> {
+        InfoQuery::get(
+            "w:biz",
+            Jid::new("", Server::Pn),
+            Some(NodeContent::Nodes(vec![
+                NodeBuilder::new("business_profile")
+                    .attr("v", "244")
+                    .children([NodeBuilder::new("profile").attr("jid", &self.jid).build()])
+                    .build(),
+            ])),
+        )
+    }
+
+    fn parse_response(&self, response: &NodeRef<'_>) -> Result<Self::Response, anyhow::Error> {
+        let biz_node = match response.get_optional_child("business_profile") {
+            Some(n) => n,
+            None => return Ok(None),
+        };
+
+        let profile_node = match biz_node.get_optional_child("profile") {
+            Some(n) => n,
+            None => return Ok(None),
+        };
+
+        let wid = optional_attr(profile_node, "jid").and_then(|s| s.parse::<Jid>().ok());
+
+        let description = profile_node
+            .get_optional_child("description")
+            .and_then(node_text)
+            .unwrap_or_default();
+
+        let address = profile_node
+            .get_optional_child("address")
+            .and_then(node_text);
+
+        let email = profile_node.get_optional_child("email").and_then(node_text);
+
+        let website: Vec<String> = profile_node
+            .get_children_by_tag("website")
+            .filter_map(node_text)
+            .collect();
+
+        let categories: Vec<BusinessCategory> = profile_node
+            .get_optional_child("categories")
+            .map(|cats| {
+                cats.get_children_by_tag("category")
+                    .filter_map(|c| {
+                        let id = optional_attr(c, "id")?.into_owned();
+                        let name = node_text(c).unwrap_or_default();
+                        Some(BusinessCategory { id, name })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let business_hours =
+            if let Some(bh_node) = profile_node.get_optional_child("business_hours") {
+                let timezone = optional_attr(bh_node, "timezone").map(|s| s.into_owned());
+                let configs: Vec<BusinessHoursConfig> = bh_node
+                    .get_children_by_tag("business_hours_config")
+                    .filter_map(|c| {
+                        let day = optional_attr(c, "day_of_week")?;
+                        let mode_str = optional_attr(c, "mode")?;
+                        Some(BusinessHoursConfig {
+                            day_of_week: DayOfWeek::from(day.as_ref()),
+                            mode: BusinessHourMode::from(mode_str.as_ref()),
+                            open_time: optional_attr(c, "open_time")
+                                .and_then(|s| s.parse::<u32>().ok()),
+                            close_time: optional_attr(c, "close_time")
+                                .and_then(|s| s.parse::<u32>().ok()),
+                        })
+                    })
+                    .collect();
+
+                BusinessHours {
+                    timezone,
+                    business_config: if configs.is_empty() {
+                        None
+                    } else {
+                        Some(configs)
+                    },
+                }
+            } else {
+                BusinessHours::default()
+            };
+
+        Ok(Some(BusinessProfile {
+            wid,
+            description,
+            email,
+            website,
+            categories,
+            address,
+            business_hours,
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preserves_absent_business_hour_times() {
+        let jid: Jid = "5511999999999@s.whatsapp.net".parse().unwrap();
+        let spec = BusinessProfileSpec::new(&jid);
+        let response = NodeBuilder::new("iq")
+            .children([NodeBuilder::new("business_profile")
+                .children([NodeBuilder::new("profile")
+                    .attr("jid", &jid)
+                    .children([NodeBuilder::new("business_hours")
+                        .attr("timezone", "America/Araguaina")
+                        .children([
+                            NodeBuilder::new("business_hours_config")
+                                .attr("day_of_week", "mon")
+                                .attr("mode", "open_24h")
+                                .build(),
+                            NodeBuilder::new("business_hours_config")
+                                .attr("day_of_week", "tue")
+                                .attr("mode", "specific_hours")
+                                .attr("open_time", "480")
+                                .attr("close_time", "1080")
+                                .build(),
+                        ])
+                        .build()])
+                    .build()])
+                .build()])
+            .build();
+
+        let profile = spec
+            .parse_response(&response.as_node_ref())
+            .unwrap()
+            .unwrap();
+        let configs = profile.business_hours.business_config.unwrap();
+
+        assert_eq!(configs[0].open_time, None);
+        assert_eq!(configs[0].close_time, None);
+        assert_eq!(configs[1].open_time, Some(480));
+        assert_eq!(configs[1].close_time, Some(1080));
+    }
+}

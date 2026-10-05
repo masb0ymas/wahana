@@ -20,15 +20,27 @@ pub struct NotificationClick {
 /// Shows a desktop notification that, when clicked, focuses the window and emits
 /// `wahana:notification-click` so the UI opens the chat it came from.
 #[tauri::command]
-pub fn notify_chat(app: AppHandle, title: String, body: String, account_id: String, chat_id: String) {
+pub fn notify_chat(
+    app: AppHandle,
+    title: String,
+    body: String,
+    account_id: String,
+    chat_id: String,
+) {
     // Waiting for a click blocks until the user acts (or the toast auto-dismisses), so keep
     // it off the command thread.
     std::thread::spawn(move || {
-        let click = NotificationClick { account_id, chat_id };
+        let click = NotificationClick {
+            account_id,
+            chat_id,
+        };
         // macOS only reports the interaction when the notification carries an action; clicking
         // the body works the same way there. The action is harmless on Windows (an "Open" button).
         let mut notification = Notification::new();
-        notification.summary(&title).body(&body).action("open", "Open");
+        notification
+            .summary(&title)
+            .body(&body)
+            .action("open", "Open");
         // The toast must be attributed to the app's AppUserModelID for activation to route back.
         #[cfg(target_os = "windows")]
         notification.app_id(&tauri::Manager::config(&app).identifier);

@@ -4,7 +4,7 @@
 
 ### Added
 
-- A refresh button in the chat list header (the Chats tab and every grid cell) to re-read the list on demand; the icon spins while it reloads.
+- A Reload button at the bottom of the sidebar (also ⌘R) to reload the app.
 - Blur a chat for privacy: right-click a chat → "Blur preview" blurs its name, last-message preview and message bubbles until you hover them, and raises a generic "New message" notification instead of the content.
 - Media auto-loads are queued, so attachments download gradually instead of in one burst.
 

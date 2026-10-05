@@ -11,6 +11,7 @@ import {
   Sparkles,
   Images,
   LayoutGrid,
+  RotateCw,
 } from "lucide-react";
 import { useSettings } from "@/store/settings";
 import { SettingsScreen } from "@/screens/SettingsScreen";
@@ -126,6 +127,9 @@ export default function App() {
       } else if (e.key === ",") {
         e.preventDefault();
         setTab("settings");
+      } else if (e.key === "r") {
+        e.preventDefault();
+        window.location.reload();
       }
     };
     const onOpenAccounts = () => setTab("accounts");
@@ -200,6 +204,14 @@ export default function App() {
             )}
           </button>
         ))}
+        <button
+          title="Reload (⌘R)"
+          aria-label="Reload"
+          onClick={() => window.location.reload()}
+          className="mt-auto w-11 h-11 rounded-xl grid place-items-center hover:bg-white/10 transition"
+        >
+          <RotateCw size={20} />
+        </button>
       </aside>
       <main className="flex-1 min-w-0 flex flex-col">
         {updater.update && (

@@ -99,6 +99,9 @@ pub struct ChatInfo {
     /// What the phone says about muting: 0 = not muted, -1 = muted for good, otherwise the
     /// end time in epoch ms. `None` when nothing was ever recorded.
     pub muted_until: Option<i64>,
+    /// What WhatsApp says about pinning: epoch ms of the pin, 0 when unpinned there. `None`
+    /// when nothing was recorded (never pinned on WhatsApp, or pinned only in this app).
+    pub pinned_at: Option<i64>,
     /// Name of the community this group belongs to, if any.
     pub community: Option<String>,
 }
@@ -1655,6 +1658,19 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
                 .lock()
                 .unwrap()
                 .set_mute(&bare_jid(&update.jid.to_string()), until);
+            emit_chats(&app, &account);
+        }
+        Event::PinUpdate(update) => {
+            let pinned_at = if update.action.pinned.unwrap_or(false) {
+                update.timestamp.timestamp_millis().max(1)
+            } else {
+                0
+            };
+            let _ = account
+                .db
+                .lock()
+                .unwrap()
+                .set_pin(&bare_jid(&update.jid.to_string()), pinned_at);
             emit_chats(&app, &account);
         }
         Event::MarkChatAsReadUpdate(update) => {
@@ -4685,15 +4701,26 @@ pub async fn wa_native_label_link(
     Ok(())
 }
 
-/// Pins or unpins a chat (WhatsApp app state, so it syncs to the phone).
+/// Pins or unpins a chat. With `sync` it goes to WhatsApp (app state, so it syncs to the
+/// phone); without, the pin is kept only in this app, past WhatsApp's limit of three, and any
+/// record of the chat's WhatsApp pin is dropped so it does not override the local one.
 #[tauri::command]
 pub async fn wa_native_pin_chat(
     state: State<'_, WaState>,
     id: String,
     chat_id: String,
     on: bool,
+    sync: bool,
 ) -> Result<(), String> {
     let account = state.get(&id)?;
+    if !sync {
+        return account
+            .db
+            .lock()
+            .unwrap()
+            .forget_pin(&bare_jid(&chat_id))
+            .map_err(|e| e.to_string());
+    }
     let client = account
         .inner
         .lock()
@@ -4710,7 +4737,14 @@ pub async fn wa_native_pin_chat(
     } else {
         actions.unpin_chat(&jid).await
     };
-    result.map_err(|e| e.to_string())
+    result.map_err(|e| e.to_string())?;
+    let pinned_at = if on { now_millis().max(1) } else { 0 };
+    let _ = account
+        .db
+        .lock()
+        .unwrap()
+        .set_pin(&bare_jid(&chat_id), pinned_at);
+    Ok(())
 }
 
 /// Archives or unarchives a chat (WhatsApp app state, so it syncs to the phone).

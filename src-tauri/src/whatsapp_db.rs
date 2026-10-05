@@ -17,7 +17,7 @@ use crate::whatsapp::{
 };
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 16;
+const SCHEMA_VERSION: i64 = 17;
 const STATUS_CHAT: &str = "status@broadcast";
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
@@ -318,6 +318,13 @@ impl ChatDb {
             // keeps the same as plain text for the chat list, notifications and quotes.
             migrate(&conn, "ALTER TABLE messages ADD COLUMN interactive TEXT;")?;
         }
+        if version < 17 {
+            // Chat pins mirrored from the phone: `pinned_at` is epoch ms, 0 when unpinned there.
+            migrate(
+                &conn,
+                "CREATE TABLE IF NOT EXISTS pins (id TEXT PRIMARY KEY, pinned_at INTEGER NOT NULL);",
+            )?;
+        }
         // Never stamp a lower version: an older build sharing this file (a previous release,
         // a dev build) would otherwise make the next newer one re-run migrations it already
         // applied.
@@ -400,7 +407,7 @@ impl ChatDb {
     /// Forgets everything, for a device that was logged out and will pair afresh.
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute_batch(
-            "DELETE FROM chats; DELETE FROM messages; DELETE FROM message_edits; DELETE FROM names; DELETE FROM lid_pn; DELETE FROM mutes;",
+            "DELETE FROM chats; DELETE FROM messages; DELETE FROM message_edits; DELETE FROM names; DELETE FROM lid_pn; DELETE FROM mutes; DELETE FROM pins;",
         )
     }
 
@@ -415,6 +422,41 @@ impl ChatDb {
 
     /// The recorded mute of a chat, found under its phone-number or privacy id alike.
     fn mute_for(&self, id: &str) -> rusqlite::Result<Option<i64>> {
+        self.chat_state(id, "SELECT until FROM mutes WHERE id = ?1")
+    }
+
+    /// Records a chat's pin state as WhatsApp has it (see the `pins` table).
+    pub fn set_pin(&self, id: &str, pinned_at: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO pins (id, pinned_at) VALUES (?1, ?2) ON CONFLICT (id) DO UPDATE SET pinned_at = excluded.pinned_at",
+            params![id, pinned_at],
+        )?;
+        Ok(())
+    }
+
+    /// Drops a chat's pin record, under its phone-number and privacy ids alike, for a pin
+    /// kept only in this app so a past unpin on the phone does not undo it.
+    pub fn forget_pin(&self, id: &str) -> rusqlite::Result<()> {
+        let pn = self.pn_for(id)?;
+        let lid = self.lid_for(id)?;
+        for candidate in [Some(id), pn.as_deref(), lid.as_deref()]
+            .into_iter()
+            .flatten()
+        {
+            self.conn
+                .execute("DELETE FROM pins WHERE id = ?1", params![candidate])?;
+        }
+        Ok(())
+    }
+
+    /// The recorded WhatsApp pin of a chat, found under its phone-number or privacy id alike.
+    fn pin_for(&self, id: &str) -> rusqlite::Result<Option<i64>> {
+        self.chat_state(id, "SELECT pinned_at FROM pins WHERE id = ?1")
+    }
+
+    /// One value of a per-chat table, looked up under the chat's own, phone-number and privacy
+    /// ids in turn, since the phone may have recorded it under either.
+    fn chat_state(&self, id: &str, sql: &str) -> rusqlite::Result<Option<i64>> {
         let pn = self.pn_for(id)?;
         let lid = self.lid_for(id)?;
         for candidate in [Some(id), pn.as_deref(), lid.as_deref()]
@@ -423,11 +465,7 @@ impl ChatDb {
         {
             let found = self
                 .conn
-                .query_row(
-                    "SELECT until FROM mutes WHERE id = ?1",
-                    params![candidate],
-                    |r| r.get::<_, i64>(0),
-                )
+                .query_row(sql, params![candidate], |r| r.get::<_, i64>(0))
                 .optional()?;
             if found.is_some() {
                 return Ok(found);
@@ -900,6 +938,7 @@ impl ChatDb {
                     .unwrap_or(sender)
             };
             let muted_until = self.mute_for(&id)?;
+            let pinned_at = self.pin_for(&id)?;
             let community = self
                 .conn
                 .query_row(
@@ -916,6 +955,7 @@ impl ChatDb {
                 });
             chats.push(ChatInfo {
                 muted_until,
+                pinned_at,
                 community,
                 saved: label.saved,
                 name: label.name,
@@ -1866,6 +1906,20 @@ mod tests {
         assert!(!db.set_read_from_device("g@g.us", true).unwrap());
         assert!(db.set_read_from_device("g@g.us", false).unwrap());
         assert_eq!(db.unread_chats(), 1);
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn whatsapp_pin_is_found_under_either_id_and_can_be_forgotten() {
+        let (db, path) = temp_db("pins");
+        db.set_lid_pn("111@lid", "62811@s.whatsapp.net").unwrap();
+        db.set_pin("111@lid", 1_700).unwrap();
+        assert_eq!(db.pin_for("62811@s.whatsapp.net").unwrap(), Some(1_700));
+        db.set_pin("111@lid", 0).unwrap();
+        assert_eq!(db.pin_for("111@lid").unwrap(), Some(0));
+        db.forget_pin("62811@s.whatsapp.net").unwrap();
+        assert_eq!(db.pin_for("111@lid").unwrap(), None);
         drop(db);
         let _ = std::fs::remove_file(&path);
     }

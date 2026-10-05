@@ -107,6 +107,9 @@ import { useWhatsApp } from "@/store/whatsapp";
 /** Timestamps from the backend are milliseconds; the shared formatters take seconds. */
 const secs = (ms: number) => Math.floor(ms / 1000);
 
+/** Chats WhatsApp lets you pin; more are kept only in this app. */
+const WA_PIN_LIMIT = 3;
+
 type Filter = "all" | "unread" | "private" | "groups" | "community" | "channels" | "archived";
 
 /** Every filter tab, in the default order. */
@@ -192,6 +195,20 @@ export function WhatsAppScreen({
       cancelled = true;
     };
   }, [account.id, tick, account.unread]);
+
+  // Pins made or removed on the phone (or another linked device) show here too. A chat with no
+  // WhatsApp record keeps whatever this app has, so pins kept only here (past WhatsApp's three)
+  // are left alone.
+  useEffect(() => {
+    const prefs = useChatPrefs.getState();
+    for (const c of chats) {
+      if (c.pinnedAt == null) continue;
+      const key = nativeChatKey(account.id, c.id);
+      const local = prefs.pinned[key];
+      if (c.pinnedAt > 0 && local === undefined) prefs.setPinned(key, c.pinnedAt);
+      else if (c.pinnedAt === 0 && local !== undefined) prefs.setPinned(key, null);
+    }
+  }, [account.id, chats]);
 
   // Mute state set on the phone (or another linked device) wins over the local copy.
   useEffect(() => {
@@ -804,6 +821,7 @@ function ChatList({
           accountId={account.id}
           chat={menu.chat}
           pinned={!!pinned[nativeChatKey(account.id, menu.chat.id)]}
+          waPinsFull={chats.filter((c) => (c.pinnedAt ?? 0) > 0).length >= WA_PIN_LIMIT}
           muted={muted[nativeChatKey(account.id, menu.chat.id)]}
           blurred={!!blurred[nativeChatKey(account.id, menu.chat.id)]}
           archived={!!archived[nativeChatKey(account.id, menu.chat.id)]}
@@ -834,6 +852,7 @@ function RowMenu({
   accountId,
   chat,
   pinned,
+  waPinsFull,
   muted,
   blurred,
   archived,
@@ -845,6 +864,8 @@ function RowMenu({
   accountId: string;
   chat: NativeChat;
   pinned: boolean;
+  /** WhatsApp already has its three pins, so a new one is kept only in this app. */
+  waPinsFull: boolean;
   muted: number | undefined;
   blurred: boolean;
   archived: boolean;
@@ -854,8 +875,11 @@ function RowMenu({
   onLabels: () => void;
 }) {
   const togglePref = useChatPrefs((s) => s.toggle);
+  const setPinned = useChatPrefs((s) => s.setPinned);
   const setMuted = useChatPrefs((s) => s.setMuted);
   const key = nativeChatKey(accountId, chat.id);
+  const onWa = (chat.pinnedAt ?? 0) > 0;
+  const localOnly = !pinned && waPinsFull;
   const item = "w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800";
   // On `document.body`, so the menu sits at the pointer's viewport coordinates and its backdrop
   // covers the window even when the chat list is a grid tile (whose layout containment would
@@ -877,13 +901,20 @@ function RowMenu({
       >
         <button
           className={item}
+          title={localOnly ? `WhatsApp allows ${WA_PIN_LIMIT} pins; this one stays in Wahana only` : undefined}
           onClick={() => {
-            togglePref("pinned", key);
-            void nativeWa.pinChat(accountId, chat.id, !pinned).catch(() => {});
+            setPinned(key, pinned ? null : Date.now());
+            // Unpinning undoes the WhatsApp pin only where there is one; pinning goes to
+            // WhatsApp while it has room, and is kept here alone if WhatsApp turns it down.
+            const sync = pinned ? onWa : !localOnly;
+            void nativeWa
+              .pinChat(accountId, chat.id, !pinned, sync)
+              .catch(() => (sync && !pinned ? nativeWa.pinChat(accountId, chat.id, true, false) : undefined))
+              .catch(() => {});
             onClose();
           }}
         >
-          <Pin size={13} /> {pinned ? "Unpin" : "Pin to top"}
+          <Pin size={13} /> {pinned ? "Unpin" : localOnly ? "Pin in Wahana only" : "Pin to top"}
         </button>
         <button
           className={item}

@@ -37,6 +37,8 @@ export interface NativeChat {
   saved: boolean;
   /** Mute state mirrored from the phone: 0 = not muted, -1 = for good, else end time (epoch ms). Absent = unknown. */
   mutedUntil?: number | null;
+  /** Pin state mirrored from WhatsApp: epoch ms of the pin, 0 = unpinned there. Absent = unknown or pinned only in this app. */
+  pinnedAt?: number | null;
   /** Name of the community this group belongs to, if any. */
   community: string | null;
 }
@@ -395,7 +397,8 @@ export const nativeWa = {
   labelLink: (id: string, labelId: string, chatId: string, on: boolean) =>
     invoke<void>("wa_native_label_link", { id, labelId, chatId, on }),
   /** Pin or unpin a chat (syncs to the phone). */
-  pinChat: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_pin_chat", { id, chatId, on }),
+  /** `sync`: also pin/unpin on WhatsApp (max three there); otherwise the pin lives only in this app. */
+  pinChat: (id: string, chatId: string, on: boolean, sync: boolean) => invoke<void>("wa_native_pin_chat", { id, chatId, on, sync }),
   /** Archive or unarchive a chat (syncs to the phone). */
   archiveChat: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_archive_chat", { id, chatId, on }),
   /** Mute a chat until `until` (epoch ms, -1 = for good) or unmute it with null (syncs to the phone). */

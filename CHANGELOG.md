@@ -17,6 +17,8 @@
 
 - In dark mode, scrollbar thumbs were drawn in the light-mode grey; they now use the dark-mode colour.
 - In group chats, a sender's avatar now sits level with the bottom of their bubble. It used to ride a few pixels high for senders with a profile picture, and drop below the bubble when the message had reactions.
+- Status: when a contact's last story ends, the viewer moves on to the next contact's stories again. Watching a contact moved it to the "Viewed" section, so the viewer looked for the next contact in the re-sorted list and often stopped. Prev and next now follow the list as it was when you opened the contact.
+- Status: the previous/next arrows stay vertically centred in the viewer instead of shifting between stories with and without a caption, and on your own status.
 
 ## 1.1.8 — 2026-10-05
 

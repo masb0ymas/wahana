@@ -58,6 +58,9 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
   const [list, setList] = useState<NativeStatus[]>([]);
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  // Contact order as it was when a contact was opened. Watching a contact's stories moves it to
+  // the "Viewed" section, so prev/next walk this snapshot rather than the live, re-sorted list.
+  const [navOrder, setNavOrder] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [compose, setCompose] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,16 +119,33 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
       });
   }, [list, seen, search]);
 
+  const open = (id: string) => {
+    setNavOrder(groups.map((g) => g.id));
+    setSelected(id);
+  };
+
   // A story opened from a reply in a chat: select its poster and start on it once loaded.
   useEffect(() => {
     if (!jump || !loaded) return;
     setJump(null);
     const group = groups.find((g) => g.stories.some((st) => st.m.id === jump));
-    if (group) setSelected(group.id);
-    else setError("That story is no longer available.");
+    if (group) {
+      setNavOrder(groups.map((g) => g.id));
+      setSelected(group.id);
+    } else setError("That story is no longer available.");
   }, [jump, loaded, groups]);
 
   const current = groups.find((g) => g.id === selected) ?? null;
+  /** The contact before/after the current one in the opening order, skipping any that are gone. */
+  const neighbour = (dir: 1 | -1) => {
+    if (!current) return undefined;
+    const order = navOrder.includes(current.id) ? navOrder : groups.map((g) => g.id);
+    for (let k = order.indexOf(current.id) + dir; k >= 0 && k < order.length; k += dir) {
+      const id = order[k]!;
+      if (groups.some((g) => g.id === id)) return () => setSelected(id);
+    }
+    return undefined;
+  };
 
   if (!connected) {
     return <div className="flex-1 grid place-items-center text-sm text-neutral-500">Connect this account to see status.</div>;
@@ -175,7 +195,7 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
                   <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Viewed</div>
                 )}
                 <button
-                  onClick={() => setSelected(g.id)}
+                  onClick={() => open(g.id)}
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
                     selected === g.id && "bg-neutral-100 dark:bg-neutral-800",
@@ -212,16 +232,8 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
           mine={current.id === "me"}
           connected={connected}
           onDeleted={() => setTick((t) => t + 1)}
-          onNextContact={(() => {
-            const idx = groups.findIndex((g) => g.id === current.id);
-            const next = groups[idx + 1];
-            return next ? () => setSelected(next.id) : undefined;
-          })()}
-          onPrevContact={(() => {
-            const idx = groups.findIndex((g) => g.id === current.id);
-            const prev = groups[idx - 1];
-            return prev ? () => setSelected(prev.id) : undefined;
-          })()}
+          onNextContact={neighbour(1)}
+          onPrevContact={neighbour(-1)}
         />
       ) : (
         <div className="flex-1 grid place-items-center text-neutral-500 text-sm">Select a contact to view their status</div>
@@ -441,7 +453,7 @@ function NativeStoryViewer({
 
   return (
     <div
-      className="flex-1 min-w-0 flex flex-col bg-neutral-950 text-white"
+      className="relative flex-1 min-w-0 flex flex-col bg-neutral-950 text-white"
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button,video,a")) return;
         setPaused((p) => !p);
@@ -531,31 +543,33 @@ function NativeStoryViewer({
           </button>
         )}
       </div>
+      {/* Anchored to the whole viewer, not the media area: that area's height changes with the
+          caption, reply bar and viewer list, which made the arrows jump between stories. */}
+      <button
+        onClick={() => {
+          if (i > 0) setI(i - 1);
+          else onPrevContact?.();
+          setPaused(false);
+        }}
+        disabled={i === 0 && !onPrevContact}
+        className="absolute z-10 left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20"
+        title={i === 0 ? "Previous contact" : "Previous"}
+      >
+        <ChevronLeft />
+      </button>
+      <button
+        onClick={() => {
+          if (i < stories.length - 1) setI(i + 1);
+          else onNextContact?.();
+          setPaused(false);
+        }}
+        disabled={i >= stories.length - 1 && !onNextContact}
+        className="absolute z-10 right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20"
+        title={i >= stories.length - 1 ? "Next contact" : "Next"}
+      >
+        <ChevronRight />
+      </button>
       <div className="relative flex-1 min-h-0 flex items-center justify-center p-4 overflow-hidden">
-        <button
-          onClick={() => {
-            if (i > 0) setI(i - 1);
-            else onPrevContact?.();
-            setPaused(false);
-          }}
-          disabled={i === 0 && !onPrevContact}
-          className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20"
-          title={i === 0 ? "Previous contact" : "Previous"}
-        >
-          <ChevronLeft />
-        </button>
-        <button
-          onClick={() => {
-            if (i < stories.length - 1) setI(i + 1);
-            else onNextContact?.();
-            setPaused(false);
-          }}
-          disabled={i >= stories.length - 1 && !onNextContact}
-          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20"
-          title={i >= stories.length - 1 ? "Next contact" : "Next"}
-        >
-          <ChevronRight />
-        </button>
         {story.kind === "text" ? (
           <div className="h-full max-h-full aspect-[9/16] max-w-full rounded-2xl flex items-center justify-center p-8 text-center text-2xl font-medium bg-wa-teal">
             <WaMarkdown text={story.text} />

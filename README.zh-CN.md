@@ -30,6 +30,17 @@
 
 从 [Releases 页面](https://github.com/ashafizullah/wahana/releases/latest) 下载最新的 `.dmg`（macOS，Apple Silicon 或 Intel）或 `.msi`（Windows x64）。应用会自动检查并安装已签名的更新。
 
+### Homebrew（macOS）
+
+Homebrew 7 在加载第三方 tap 中的 cask 前，需要先信任该 tap：
+
+```bash
+brew trust ashafizullah/tap
+brew install --cask ashafizullah/tap/wahana
+```
+
+升级：`brew upgrade --cask wahana`（也可在应用内更新）；卸载：`brew uninstall --cask wahana`（追加 `--zap` 可一并删除应用数据）。
+
 > macOS：当前构建尚未公证，Gatekeeper 可能提示应用“已损坏，无法打开”。其实并没有损坏 —— 复制到“应用程序”后，在终端执行一次 `xattr -cr /Applications/Wahana.app`，然后正常打开即可。Apple Silicon（M1–M4）选择 `aarch64`，Intel Mac 选择 `x64`。
 
 ## 从源码安装

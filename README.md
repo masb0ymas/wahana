@@ -30,6 +30,17 @@
 
 Grab the latest `.dmg` (macOS, Apple Silicon or Intel) or `.msi` (Windows x64) from the [Releases page](https://github.com/ashafizullah/wahana/releases/latest). The app checks for signed updates automatically.
 
+### Homebrew (macOS)
+
+Homebrew 7 requires trusting a third-party tap before its casks can load:
+
+```bash
+brew trust ashafizullah/tap
+brew install --cask ashafizullah/tap/wahana
+```
+
+Upgrade with `brew upgrade --cask wahana` (or from inside the app); remove with `brew uninstall --cask wahana` (add `--zap` to also delete your data).
+
 > macOS: the build is not notarized yet, so Gatekeeper may claim the app "is damaged and can't be opened". It isn't — after copying it to Applications, run `xattr -cr /Applications/Wahana.app` once in Terminal, then open it normally. Pick `aarch64` for Apple Silicon (M1–M4) and `x64` for Intel Macs.
 
 ## Install from source

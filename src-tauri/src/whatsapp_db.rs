@@ -875,16 +875,8 @@ impl ChatDb {
         let mut senders: HashMap<String, Resolved> = HashMap::new();
         let mut chats = Vec::new();
         for row in rows {
-            let (
-                id,
-                last_text,
-                last_timestamp,
-                last_from_me,
-                sender_id,
-                sender,
-                unread,
-                last_ack,
-            ) = row?;
+            let (id, last_text, last_timestamp, last_from_me, sender_id, sender, unread, last_ack) =
+                row?;
             let label = self.chat_label(&id)?;
             let last_sender = if sender_id.is_empty() {
                 sender

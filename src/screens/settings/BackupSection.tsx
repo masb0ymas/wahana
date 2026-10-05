@@ -30,6 +30,7 @@ export function BackupSection() {
   const [opts, setOpts] = useState<RestoreOptions>({
     prefs: true,
     chatPrefs: true,
+    messagePins: true,
     quickReplies: true,
     schedules: true,
     autoReplies: true,
@@ -43,9 +44,9 @@ export function BackupSection() {
       <div className="space-y-2">
         <div className="text-sm font-medium">Export</div>
         <p className="text-xs text-neutral-500">
-          Includes: preferences, theme, AI settings, pinned/muted/archived chats, quick replies, schedules (without attachments), auto-reply
-          rules, knowledge base entries, saved stickers, WhatsApp account names. Not included: message history, media cache, broadcast
-          history, WhatsApp logins — restored accounts need a new QR scan.
+          Includes: preferences, theme, AI settings, pinned/muted/archived chats, pinned messages, quick replies, schedules (without
+          attachments), auto-reply rules, knowledge base entries, saved stickers, WhatsApp account names. Not included: message history,
+          media cache, broadcast history, WhatsApp logins — restored accounts need a new QR scan.
         </p>
         <label className="flex items-start gap-2 text-sm cursor-pointer">
           <input type="checkbox" className="mt-1" checked={includeSecrets} onChange={(e) => setIncludeSecrets(e.target.checked)} />
@@ -113,15 +114,17 @@ export function BackupSection() {
             <div className="text-xs text-neutral-500">
               Exported {new Date(pending.backup.exportedAt).toLocaleString()} · app {pending.backup.appVersion} ·{" "}
               {pending.backup.quickReplies?.length ?? 0} quick replies · {pending.backup.schedules?.length ?? 0} schedules ·{" "}
-              {pending.backup.autoReplyRules?.length ?? 0} auto-reply rules · {pending.backup.knowledge?.length ?? 0} knowledge entries ·{" "}
-              {pending.backup.stickers?.length ?? 0} stickers · {pending.backup.nativeAccounts?.length ?? 0} WhatsApp account(s)
+              {pending.backup.autoReplyRules?.length ?? 0} auto-reply rules · {Object.keys(pending.backup.messagePins ?? {}).length} pinned
+              messages · {pending.backup.knowledge?.length ?? 0} knowledge entries · {pending.backup.stickers?.length ?? 0} stickers ·{" "}
+              {pending.backup.nativeAccounts?.length ?? 0} WhatsApp account(s)
               {pending.backup.secrets ? " · includes API keys" : ""}
             </div>
             <div className="grid grid-cols-2 gap-1 text-sm">
               {(
                 [
                   ["prefs", "Preferences, theme & AI"],
-                  ["chatPrefs", "Pinned / muted / archived"],
+                  ["chatPrefs", "Pinned / muted / archived chats"],
+                  ["messagePins", "Pinned messages"],
                   ["quickReplies", "Quick replies"],
                   ["schedules", "Schedules"],
                   ["autoReplies", "Auto-reply rules"],

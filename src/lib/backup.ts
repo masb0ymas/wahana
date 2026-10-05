@@ -8,6 +8,7 @@ import { getSecret, setSecret } from "@/lib/secrets";
 import { db } from "@/store/scheduler";
 import { invalidateKbCache, kbConfigured, reindexAll } from "@/lib/knowledge";
 import { useChatPrefs, type Takeover } from "@/store/chatPrefs";
+import { usePins } from "@/store/pins";
 import { upsertRule, type AutoReplyRule } from "@/store/autoReply";
 import { addSticker, listStickers } from "@/lib/stickers";
 import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
@@ -30,6 +31,8 @@ export interface Backup {
     autoTranslate?: Record<string, { in?: string; out?: string }>;
     takeover?: Record<string, Takeover>;
   };
+  /** Since backup version 4. Messages pinned for everyone, keyed `session:chatId:bareId` → expiry (unix ms). */
+  messagePins?: Record<string, number>;
   quickReplies: QuickReply[];
   schedules: Omit<Schedule, "media_b64">[];
   /** Since backup version 2. */
@@ -76,7 +79,7 @@ export interface NativeRestore {
   outcome: "added" | "exists";
 }
 
-const BACKUP_VERSION = 3;
+const BACKUP_VERSION = 4;
 
 const blobToB64 = async (b: Blob) => {
   const bytes = new Uint8Array(await b.arrayBuffer());
@@ -147,6 +150,8 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
       autoTranslate: (await chatPrefsStore.get("autoTranslate")) ?? {},
       takeover: (await chatPrefsStore.get("takeover")) ?? {},
     },
+    // Read from the live store so a pin made moments ago (still inside its write debounce) is included.
+    messagePins: usePins.getState().items,
     quickReplies: await d.select<QuickReply[]>("SELECT * FROM quick_replies"),
     schedules: await d.select<Omit<Schedule, "media_b64">[]>(
       "SELECT id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs FROM schedules",
@@ -175,6 +180,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
 export interface RestoreOptions {
   prefs: boolean;
   chatPrefs: boolean;
+  messagePins: boolean;
   quickReplies: boolean;
   schedules: boolean;
   autoReplies: boolean;
@@ -237,6 +243,13 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
     } catch {
       /* channel mutes are a convenience */
     }
+  }
+  if (opts.messagePins && b.messagePins) {
+    // Merge into the live store (it owns the file and flushes its in-memory state over it).
+    const ps = await load("pins.json", { autoSave: true, defaults: {} });
+    const livePins = usePins.getState();
+    await ps.set("items", { ...livePins.items, ...b.messagePins });
+    await livePins.hydrate();
   }
   const d = await db();
   if (opts.quickReplies && b.quickReplies) {

@@ -840,8 +840,8 @@ fn interactive_content(message: &wa::Message) -> Option<(MessageKind, String, In
     }
     if let Some(l) = base.location_message.as_option() {
         let (lat, lng) = (
-            l.degrees_latitude.unwrap_or_default(),
-            l.degrees_longitude.unwrap_or_default(),
+            finite_degrees(l.degrees_latitude),
+            finite_degrees(l.degrees_longitude),
         );
         let name = l.name.clone().filter(|s| !s.is_empty());
         let address = l.address.clone().filter(|s| !s.is_empty());
@@ -863,8 +863,8 @@ fn interactive_content(message: &wa::Message) -> Option<(MessageKind, String, In
     }
     if let Some(l) = base.live_location_message.as_option() {
         let (lat, lng) = (
-            l.degrees_latitude.unwrap_or_default(),
-            l.degrees_longitude.unwrap_or_default(),
+            finite_degrees(l.degrees_latitude),
+            finite_degrees(l.degrees_longitude),
         );
         let body = location_body(None, l.caption.as_deref(), lat, lng);
         return Some((
@@ -957,11 +957,14 @@ fn phone_from_vcard(vcard: &str) -> Option<String> {
         (key.eq_ignore_ascii_case("waid") && !value.is_empty()).then(|| format!("+{value}"))
     });
     let digits = waid.unwrap_or_else(|| value.trim().replace([' ', '-', '(', ')'], ""));
-    if digits.is_empty() {
-        None
-    } else {
-        Some(digits)
-    }
+    // A number with no digits at all (`TEL:abc`) would open a chat with an empty JID.
+    digits.chars().any(|c| c.is_ascii_digit()).then_some(digits)
+}
+
+/// A coordinate as WhatsApp sent it, or 0 when missing or not a finite number: NaN and
+/// infinity serialize to JSON `null`, which the location card cannot show or open.
+fn finite_degrees(value: Option<f64>) -> f64 {
+    value.filter(|v| v.is_finite()).unwrap_or_default()
 }
 
 /// A poll as readable text: its question, then one bullet per option.
@@ -4871,6 +4874,20 @@ mod content_tests {
         );
         assert_eq!(card.name, "Ann: Work");
         assert_eq!(card.phone.as_deref(), Some("+628123456"));
+    }
+
+    #[test]
+    fn a_vcard_number_without_digits_is_no_phone() {
+        let card = contact_card(Some("Eve"), Some("BEGIN:VCARD\nTEL:abc\nEND:VCARD"));
+        assert_eq!(card.phone, None);
+    }
+
+    #[test]
+    fn a_non_finite_coordinate_falls_back_to_zero() {
+        assert_eq!(finite_degrees(Some(f64::NAN)), 0.0);
+        assert_eq!(finite_degrees(Some(f64::INFINITY)), 0.0);
+        assert_eq!(finite_degrees(None), 0.0);
+        assert_eq!(finite_degrees(Some(-6.2)), -6.2);
     }
 
     #[test]

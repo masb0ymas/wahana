@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 — 2026-10-05
+
+### Fixed
+
+- Linking a hosted WhatsApp Business account no longer fails. Scanning the QR code could be refused at the pairing signature check and the device rolled back, so the account never connected; the handshake now validates the hosted device identity the way WhatsApp Web does.
+
 ## 1.1.9 — 2026-10-05
 
 ### Added

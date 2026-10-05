@@ -6679,6 +6679,7 @@ dependencies = [
  "base64 0.22.1",
  "image",
  "keyring",
+ "notify-rust",
  "rusqlite",
  "serde",
  "serde_json",

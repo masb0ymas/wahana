@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import {
   MessageSquare,
   Smartphone,
@@ -173,6 +174,25 @@ export default function App() {
       window.removeEventListener("wahana:open-accounts", onOpenAccounts);
       window.removeEventListener("wahana:open-status", onOpenStatus);
       window.removeEventListener("wahana:open-welcome", onOpenWelcome);
+    };
+  }, []);
+
+  // A notification click asks for the chats tab and one conversation (the native side already
+  // raised the window and emitted the event).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen<{ accountId: string; chatId: string }>("wahana:notification-click", (e) => {
+      setWelcome(false);
+      setTab("chats");
+      useWhatsApp.getState().openChatFromNotification(e.payload);
+    }).then((un) => {
+      if (cancelled) un();
+      else unlisten = un;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
     };
   }, []);
 

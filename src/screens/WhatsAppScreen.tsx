@@ -138,6 +138,8 @@ export function WhatsAppScreen({
 }) {
   const tick = useWhatsApp((s) => s.messageTick[account.id] ?? 0);
   const setOpenChat = useWhatsApp((s) => s.setOpenChat);
+  const pendingOpen = useWhatsApp((s) => s.pendingOpen);
+  const clearPendingOpen = useWhatsApp((s) => s.clearPendingOpen);
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
   const [chats, setChats] = useState<NativeChat[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
@@ -151,6 +153,14 @@ export function WhatsAppScreen({
     setChatId(null);
     setError(null);
   }, [account.id]);
+
+  // A notification click names a chat: open it once that account is the one on screen.
+  // Declared after the reset above so it wins on the render that switches accounts.
+  useEffect(() => {
+    if (!pendingOpen || pendingOpen.accountId !== account.id) return;
+    setChatId(pendingOpen.chatId);
+    clearPendingOpen();
+  }, [pendingOpen, account.id, clearPendingOpen]);
 
   useEffect(() => {
     setOpenChat(account.id, chatId);

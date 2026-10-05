@@ -424,8 +424,11 @@ function ParticipantsModal({
   const admins = group.members.filter((m) => m.admin).length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-[460px] max-h-[80vh] flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-[460px] max-h-full flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <Users size={16} className="text-wa-dark" />
           <span className="font-semibold flex-1">

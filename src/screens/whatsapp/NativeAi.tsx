@@ -582,7 +582,7 @@ export function NativeSummaryModal({
 
   return (
     <div
-      className="fixed inset-0 z-40 bg-black/40 grid place-items-center p-6"
+      className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="w-full max-w-2xl max-h-full flex flex-col rounded-2xl bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden">

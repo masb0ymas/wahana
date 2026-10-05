@@ -170,7 +170,9 @@ function NativeAccountCard({
           </div>
           {a.me && (
             <div className="text-xs text-neutral-500 truncate selectable">
-              {a.me.pushName} · +{a.me.id.split("@")[0]}
+              {a.me.pushName}
+              {/* An account without a phone number is known by its LID, which is not a number. */}
+              {a.me.id.endsWith("@s.whatsapp.net") && ` · +${a.me.id.split("@")[0]}`}
             </div>
           )}
         </div>

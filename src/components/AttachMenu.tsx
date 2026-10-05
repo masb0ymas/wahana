@@ -55,15 +55,18 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-[400px] rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-[400px] max-h-full flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <span className="font-semibold flex-1">{title}</span>
           <button onClick={onClose}>
             <X size={16} />
           </button>
         </div>
-        <div className="p-4 space-y-3">{children}</div>
+        <div className="p-4 space-y-3 overflow-y-auto">{children}</div>
       </div>
     </div>
   );

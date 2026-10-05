@@ -1,9 +1,9 @@
 import { Avatar } from "@/components/ui";
+import { type NativeAccount, type NativeWaStatus } from "@/lib/nativeWa";
+import { cn } from "@/lib/utils";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 import { WhatsAppScreen } from "@/screens/WhatsAppScreen";
-import { type NativeAccount, type NativeWaStatus } from "@/lib/nativeWa";
 import { useAccountStyleFor } from "@/store/accountStyle";
-import { cn } from "@/lib/utils";
 
 const dotTone: Record<NativeWaStatus, string> = {
   working: "bg-wa",
@@ -14,8 +14,15 @@ const dotTone: Record<NativeWaStatus, string> = {
   failed: "bg-red-500",
 };
 
+/**
+ * `contain-layout` is what keeps this tile self-contained: a dialog rendered anywhere inside it
+ * (`fixed inset-0`) then resolves against the tile instead of the window, so a group's
+ * participants, join requests, labels and so on open over their own account rather than in the
+ * middle of the whole page. The tile already clips (`overflow-hidden`), so the contained
+ * overlays cannot spill past its edges either.
+ */
 const tileShell =
-  "flex flex-col min-h-0 h-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden";
+  "contain-layout flex flex-col min-h-0 h-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden";
 
 /**
  * One account in the grid: a header strip and a full `WhatsAppScreen` in embedded mode, so the
@@ -33,7 +40,7 @@ export function AccountChatTile({ account }: { account: NativeAccount }) {
       <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800">
         <span className={cn("w-2 h-2 rounded-full shrink-0", dotTone[account.status])} title={account.status} />
         <span className="shrink-0 rounded-full" style={{ boxShadow: `0 0 0 2px ${color}` }}>
-          <Avatar src={selfPicture} name={account.me?.pushName ?? account.name} size={26} />
+          <Avatar src={selfPicture} name={account.me?.pushName ?? account.name} size={32} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">

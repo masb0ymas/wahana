@@ -1771,10 +1771,15 @@ async fn run_account(
                 inner.status = WaStatus::Working;
                 inner.error = None;
                 inner.me = Some(AccountMe {
+                    // `Jid`'s Display appends the device suffix (`628…:16@s.whatsapp.net`), which
+                    // the profile-picture lookup does not answer for and which leaks into the
+                    // number shown in the UI, so store the bare JID like every other consumer.
+                    // Accounts without a phone number fall back to their LID.
                     id: device
                         .pn
                         .as_ref()
-                        .map(|jid| jid.to_string())
+                        .or(device.lid.as_ref())
+                        .map(|jid| bare_jid(&jid.to_string()))
                         .unwrap_or_default(),
                     push_name: device.push_name.clone(),
                 });
@@ -4882,5 +4887,33 @@ mod content_tests {
             ..Default::default()
         };
         assert!(message_content(&message).is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bare_jid, Jid};
+
+    /// The device snapshot's `pn`/`lid` print with the device suffix (`628…:16@s.whatsapp.net`).
+    /// The account's self id must be the bare JID: the profile-picture lookup is not answered for
+    /// a device-scoped JID (so the tile fell back to initials), and the suffix leaked into the
+    /// number shown in the UI.
+    #[test]
+    fn self_id_is_the_bare_jid() {
+        // What `Device.pn` actually holds for a linked account: the raw Display keeps the device.
+        let stored: Jid = "6287837554403:16@s.whatsapp.net".parse().unwrap();
+        assert_eq!(stored.to_string(), "6287837554403:16@s.whatsapp.net");
+        assert_eq!(
+            bare_jid(&stored.to_string()),
+            "6287837554403@s.whatsapp.net"
+        );
+
+        assert_eq!(bare_jid("155933300805837:16@lid"), "155933300805837@lid");
+        // Already bare, and non-JID inputs, pass through.
+        assert_eq!(
+            bare_jid("6287837554403@s.whatsapp.net"),
+            "6287837554403@s.whatsapp.net"
+        );
+        assert_eq!(bare_jid(""), "");
     }
 }

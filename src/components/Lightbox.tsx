@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Download, ZoomIn, ZoomOut, Loader2, Check, Maximize, Minimize } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -73,7 +74,9 @@ export function Lightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
     }
   };
 
-  return (
+  // On `document.body`, so the viewer covers the window even when opened from a grid tile (whose
+  // layout containment would otherwise make `fixed` resolve against the tile).
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="flex items-center gap-2 p-3 text-white">
         <span className="text-sm truncate flex-1 opacity-80 selectable">{item.filename}</span>
@@ -131,6 +134,7 @@ export function Lightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
         )}
       </div>
       {item.caption && <div className="p-3 text-center text-sm text-white/80 selectable">{item.caption}</div>}
-    </div>
+    </div>,
+    document.body,
   );
 }

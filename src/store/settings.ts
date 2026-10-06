@@ -35,6 +35,8 @@ export interface Prefs {
   linkPreviews: boolean;
   /** Send "typing…" presence to the other side while composing. */
   sendTyping: boolean;
+  /** Go online while a chat is open, which is what lets you see the contact's online, last seen and typing. */
+  appearOnline: boolean;
   /** When to send read receipts (blue ticks): on opening a chat, only when you reply, or never. */
   readReceipts: ReadReceipts;
   /** Order of the chat-list filter tabs, rearranged by dragging. */
@@ -87,6 +89,7 @@ export interface Prefs {
   // Keyed by account (`native:<accountId>`). A missing entry falls back to the built-in default
   // above; that default is not editable from a scope of its own anymore.
   sendTypingByAccount: Record<string, boolean>;
+  appearOnlineByAccount: Record<string, boolean>;
   readReceiptsByAccount: Record<string, ReadReceipts>;
   /** Auto-download media per account; a missing kind falls back to the built-in default above. */
   mediaByAccount: Record<string, Partial<MediaPrefs>>;
@@ -103,6 +106,7 @@ const DEFAULT_PREFS: Prefs = {
   cacheLimitMb: 1024,
   linkPreviews: true,
   sendTyping: true,
+  appearOnline: true,
   readReceipts: "always",
   chatTabOrder: ["all", "unread", "private", "groups", "community", "channels", "archived"],
   gridColumns: 3,
@@ -128,6 +132,7 @@ const DEFAULT_PREFS: Prefs = {
   appLockOnHide: false,
   appLockOnStart: false,
   sendTypingByAccount: {},
+  appearOnlineByAccount: {},
   readReceiptsByAccount: {},
   mediaByAccount: {},
   aiPersonaByAccount: {},
@@ -207,6 +212,9 @@ export const useReadReceipts = (account: string | null): ReadReceipts =>
 
 export const useSendTyping = (account: string | null): boolean =>
   useSettings((s) => (account ? s.sendTypingByAccount[account] : undefined) ?? s.sendTyping);
+
+export const useAppearOnline = (account: string | null): boolean =>
+  useSettings((s) => (account ? s.appearOnlineByAccount[account] : undefined) ?? s.appearOnline);
 
 /** Effective auto-download prefs for an account (per-kind fallback to the built-in default). */
 export const useMediaPrefs = (account: string | null): MediaPrefs => ({

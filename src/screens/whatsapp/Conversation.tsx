@@ -6,7 +6,7 @@ import { TakeoverButton } from "@/components/TakeoverButton";
 import { confirm } from "@/components/Confirm";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LANGUAGES, aiConfigured, langName } from "@/lib/ai";
-import { cn, convKey, errMsg, formatDateDivider, isChannel, isGroup } from "@/lib/utils";
+import { cn, convKey, errMsg, formatDateDivider, formatLastSeen, isChannel, isGroup } from "@/lib/utils";
 import { chatLabel } from "@/lib/chatLabel";
 import { stripWaMarkdown } from "@/lib/waMarkdown";
 import { nativeWa, type NativeAccount, type NativeChat, type NativeMessage } from "@/lib/nativeWa";
@@ -17,7 +17,7 @@ import { usePicture } from "@/screens/whatsapp/usePicture";
 import { useNativeTyping } from "@/screens/whatsapp/useNativeTyping";
 import { TypingBubble } from "@/components/TypingBubble";
 import { saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
-import { readReceiptsFor, useReadReceipts } from "@/store/settings";
+import { readReceiptsFor, useAppearOnline, useReadReceipts } from "@/store/settings";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { useChatPrefs } from "@/store/chatPrefs";
 import { bareId } from "@/store/reactions";
@@ -140,7 +140,10 @@ export function Conversation({
     };
   }, [group, connected, account.id, chatId]);
   const picture = usePicture(account.id, chatId, connected);
-  const typists = Object.values(useNativeTyping(account.id, chatId, connected && !channel));
+  const appearOnline = useAppearOnline(nativeAccountKey(account.id));
+  const watched = useNativeTyping(account.id, chatId, connected && !channel && appearOnline);
+  const typists = Object.values(watched.typists);
+  const presence = group ? null : watched.presence;
   const moreStored = messages.length >= limit;
   const chatPins = useChatPins(prefsKey);
   const [pinIdx, setPinIdx] = useState(0);
@@ -395,11 +398,15 @@ export function Conversation({
                   ? "Group · click for members"
                   : channel
                     ? "Channel · read-only"
-                    : pushName
-                      ? `~${pushName}`
-                      : chat?.saved && chat.phone
-                        ? chat.phone
-                        : "Contact"}
+                    : presence?.online
+                      ? "online"
+                      : presence?.lastSeen
+                        ? `last seen ${formatLastSeen(presence.lastSeen)}`
+                        : pushName
+                          ? `~${pushName}`
+                          : chat?.saved && chat.phone
+                            ? chat.phone
+                            : "Contact"}
               </div>
             </div>
           </button>

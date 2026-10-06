@@ -498,3 +498,14 @@ export interface NativeTyping {
 
 export const onNativeTyping = (cb: (typing: NativeTyping) => void): Promise<UnlistenFn> =>
   listen<NativeTyping>("wa_native:typing", (event) => cb(event.payload));
+
+/** A contact went online or offline. `lastSeen` (unix ms) is null when their privacy hides it. */
+export interface NativePresence {
+  id: string;
+  chatIds: string[];
+  online: boolean;
+  lastSeen: number | null;
+}
+
+export const onNativePresence = (cb: (presence: NativePresence) => void): Promise<UnlistenFn> =>
+  listen<NativePresence>("wa_native:presence", (event) => cb(event.payload));

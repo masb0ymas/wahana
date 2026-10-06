@@ -649,6 +649,7 @@ pub async fn wa_native_watch_typing(
     let jid: Jid = chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let _serial = account.presence.lock().await;
     let (client, toggle) = {
         let mut inner = account.inner.lock().unwrap();
         let client = inner
@@ -666,8 +667,12 @@ pub async fn wa_native_watch_typing(
     let direct = !chat_id.ends_with("@g.us");
     let presence = client.presence();
     if on {
+        // Subscribe even when going online fails (an empty push name refuses it): the
+        // server may still answer, and typing would otherwise never be watched.
         if toggle {
-            presence.set_available().await.map_err(|e| e.to_string())?;
+            if let Err(e) = presence.set_available().await {
+                eprintln!("[presence] set_available failed: {e}");
+            }
         }
         if direct {
             presence.subscribe(jid).await.map_err(|e| e.to_string())?;

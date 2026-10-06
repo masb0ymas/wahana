@@ -6,8 +6,8 @@
 //! owned by `whatsapp-rust`, and `<id>.chats.db`, the chat history (see `whatsapp_db`).
 //!
 //! History arrives from the phone right after pairing; older messages of a chat can be
-//! asked for on demand. Media is downloaded on request and decrypted here; read receipts
-//! and presence are not wired up yet.
+//! asked for on demand. Media is downloaded on request and decrypted here. The open
+//! direct chat subscribes to the contact's presence for typing and online / last seen.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -387,6 +387,17 @@ struct PinPayload {
     expires: i64,
 }
 
+/// A contact went online or offline. `last_seen` (unix ms) is only set when their privacy
+/// settings share it; `chat_ids` holds the chat under both its phone-number and privacy id.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PresencePayload {
+    id: String,
+    chat_ids: Vec<String>,
+    online: bool,
+    last_seen: Option<i64>,
+}
+
 /// Someone started or stopped typing (or recording) in a chat. `chat_ids` holds the chat
 /// under both its phone-number and privacy id, since the open chat may run on either.
 #[derive(Clone, Serialize)]
@@ -443,6 +454,10 @@ pub struct WaAccount {
     inner: Mutex<AccountInner>,
     /// Locked after `inner` whenever both are needed, never the other way round.
     db: Mutex<ChatDb>,
+    /// Serializes presence changes: switching chats closes one watch and opens the next at
+    /// once, and an "unavailable" landing after the new "available" would leave the account
+    /// offline, so the server stops sending the contact's presence.
+    presence: tokio::sync::Mutex<()>,
 }
 
 impl WaAccount {
@@ -454,6 +469,7 @@ impl WaAccount {
             name: Mutex::new(name),
             inner: Mutex::new(AccountInner::default()),
             db: Mutex::new(db),
+            presence: tokio::sync::Mutex::new(()),
         })
     }
 

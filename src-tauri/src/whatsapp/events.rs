@@ -185,6 +185,30 @@ pub(super) async fn handle_event(
                 },
             );
         }
+        // Online / last seen of a contact whose presence the open chat subscribed to.
+        Event::Presence(update) => {
+            let from = bare_jid(&update.from.to_string());
+            let mut chat_ids = vec![from.clone()];
+            let alt = {
+                let db = account.db.lock().unwrap();
+                if from.ends_with("@lid") {
+                    db.pn_for(&from)
+                } else {
+                    db.lid_for(&from)
+                }
+            };
+            chat_ids.extend(alt.ok().flatten().filter(|a| *a != from));
+            let _ = app.emit_to(
+                "main",
+                "wa_native:presence",
+                PresencePayload {
+                    id: account.id.clone(),
+                    chat_ids,
+                    online: !update.unavailable,
+                    last_seen: update.last_seen.map(|t| t.timestamp_millis()),
+                },
+            );
+        }
         Event::HistorySync(sync) => {
             let progress = sync.progress();
             let sync = (**sync).clone();
@@ -681,6 +705,7 @@ pub(super) async fn run_account(
                 EventKind::LabelEditUpdate,
                 EventKind::LabelAssociationUpdate,
                 EventKind::ChatPresence,
+                EventKind::Presence,
             ],
             on_event,
         )

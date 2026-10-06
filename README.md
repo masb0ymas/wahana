@@ -155,12 +155,15 @@ Signing uses a minisign keypair: `npx tauri signer generate -w ~/.tauri/wahana.k
 src/realtime/    scheduler, broadcast & auto-reply runners, notifications, updater
 src/store/       zustand stores (settings, reactions, pins, drafts, …) and SQLite data layers
 src/screens/     Chats, Status, Features (Scheduler / Broadcast / Auto-reply / Knowledge / Tweaks / Quick replies), Accounts, Settings (settings/ = one file per section)
-                 WhatsAppScreen + whatsapp/ = pairing, info panel, group tools, media, labels, status, AI
+                 WhatsAppScreen + whatsapp/ = chat list, conversation, bubble, composer, dialogs,
+                 pairing, info panel, group tools, media, labels, status, AI
 src/components/  dialogs, menus, media, pickers
 src/lib/         WhatsApp markdown, AI client, media cache, secrets, backup; nativeWa.ts (commands & events), send.ts
 src-tauri/       Rust shell: keychain, media cache, tray, SQLite migrations
-  whatsapp.rs    native client on whatsapp-rust: accounts, pairing, events, send, media, groups, status, labels
-  whatsapp_db.rs per-account SQLite chat store: chats, messages, media keys, LID ↔ phone map, labels
+  whatsapp/      native client on whatsapp-rust, one file per area: accounts, events, history,
+                 content, messages, chats, polls, media, groups, channels, status, labels, info
+  whatsapp_db/   per-account SQLite chat store: chats, messages, media keys, LID ↔ phone map,
+                 labels, polls (mod.rs holds the schema and migrations)
 ```
 
 ## Support

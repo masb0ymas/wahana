@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /**
- * Thin client for the native WhatsApp accounts served by `src-tauri/src/whatsapp.rs`:
+ * Thin client for the native WhatsApp accounts served by `src-tauri/src/whatsapp/`:
  * pairing, status, send text, and whatever chats and messages the running client has seen
  * since launch. App state built on it lives in `@/store/whatsapp`.
  */

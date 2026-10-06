@@ -45,6 +45,8 @@ export interface Prefs {
   gridColumns: number;
   /** Rows of the multi-account grid view visible at once (extra accounts scroll). */
   gridRows: number;
+  /** Account ids in the order their tiles appear in the grid view, rearranged by dragging. */
+  gridOrder: string[];
   // ── AI ──
   aiBaseUrl: string;
   aiModel: string;
@@ -111,6 +113,7 @@ const DEFAULT_PREFS: Prefs = {
   chatTabOrder: ["all", "unread", "private", "groups", "community", "channels", "archived"],
   gridColumns: 3,
   gridRows: 2,
+  gridOrder: [],
   aiBaseUrl: "",
   aiModel: "",
   aiFastModel: "",

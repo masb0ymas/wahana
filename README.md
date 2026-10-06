@@ -22,9 +22,12 @@
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white">
 </p>
 
-> **Wahana** means "vehicle / platform" in Indonesian. This is an unofficial client, not affiliated with, endorsed by, or connected to WhatsApp or Meta. "WhatsApp" is a trademark of Meta Platforms, Inc.
+> **Wahana** means "vehicle / platform" in Indonesian. This is an unofficial client, not made by, affiliated with, endorsed by, or connected to WhatsApp or Meta. "WhatsApp" is a trademark of Meta Platforms, Inc.
+
+> [!WARNING]
+> **Use Wahana at your own risk.** Using an unofficial client can break WhatsApp's Terms of Service, and WhatsApp may restrict or permanently ban the number you link. Broadcasts, scheduled messages and auto-replies raise that risk.
 >
-> Using unofficial clients may violate WhatsApp's Terms of Service and can get your number banned, especially with bulk messaging or auto-replies. Use at your own risk.
+> Whatever happens to your account is your responsibility, not the project's. Wahana is provided as is, without warranty (see [LICENSE](LICENSE)). Use it wisely, and don't link a number you can't afford to lose.
 
 ## Download
 
@@ -80,6 +83,7 @@ Optionally, for the AI features, your own API key for Anthropic or any OpenAI-co
 - Read receipts and typing indicator (following the privacy settings), unread badges (list, tab, dock/tray), filter tabs (unread / private / groups / communities / channels) you can reorder by dragging
 - Pin chats, mute for 8 hours / 1 week / always, drafts, labels (create, rename, delete, assign), all synced with your phone
 - In-chat search, jump to a pinned message, infinite history paging, export to `.txt` / `.html` / `.json`
+- Polls: create them from the composer's **+** menu (single or multiple choice), vote, and see live tallies with who voted; shared locations and contacts show as cards
 
 **Groups & contacts**
 
@@ -111,12 +115,12 @@ Optionally, for the AI features, your own API key for Anthropic or any OpenAI-co
 
 **App**
 
-- First-run welcome screen: link WhatsApp, no manual required
+- First-run welcome screen: the risk notice above, then link WhatsApp, no manual required
 - System tray, desktop notifications, keyboard shortcuts, light / dark theme
 - Privacy tweaks: typing indicator on/off, read receipts always / on reply / manual / never
 - Settings backup & restore (incl. auto-reply rules, theme, stickers, account names), auto-updater
 
-**Not yet**: locations, contacts and polls (shown as "unsupported message"), calls.
+**Not yet**: sending locations and contacts, calls. Polls stored before votes were supported can't be voted on here; vote on those from your phone.
 
 ## Development
 

@@ -13,7 +13,7 @@ import {
   type NativeAccount,
   type NativeQr,
 } from "@/lib/nativeWa";
-import { nativeAccountKey, nativeChatKey } from "@/lib/account";
+import { MAX_ACCOUNTS, nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { convKey, displayId, isGroup } from "@/lib/utils";
 import { chatLabel } from "@/lib/chatLabel";
 import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
@@ -182,6 +182,7 @@ export const useWhatsApp = create<State>((set, get) => ({
     set({ accounts, active, hydrated: true });
   },
   async add(name) {
+    if (get().accounts.length >= MAX_ACCOUNTS) throw new Error(`At most ${MAX_ACCOUNTS} accounts can be linked.`);
     const account = await nativeWa.add(nativeWa.newId(), name ?? `WhatsApp ${get().accounts.length + 1}`);
     set((st) => ({ accounts: upsert(st.accounts, account) }));
     get().setActive(account.id);

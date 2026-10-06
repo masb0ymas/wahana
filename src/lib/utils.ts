@@ -39,6 +39,20 @@ export function formatMessageTime(unixSeconds: number) {
   return `${bubbleWeekday.format(d)}, ${time}`;
 }
 
+const lastSeenDate = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+
+/** "today at 15:30", "yesterday at 15:30" or "3 Oct at 15:30", for a contact's last seen (unix ms). */
+export function formatLastSeen(unixMs: number) {
+  const d = new Date(unixMs);
+  const time = bubbleTime.format(d);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return `today at ${time}`;
+  const y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return `yesterday at ${time}`;
+  return `${lastSeenDate.format(d)} at ${time}`;
+}
+
 export function formatDateDivider(unixSeconds: number) {
   const d = new Date(unixSeconds * 1000);
   const now = new Date();

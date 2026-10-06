@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, Bot, CalendarClock, Megaphone, SlidersHorizontal, Zap } from "lucide-react";
+import { BookOpen, Bot, CalendarClock, Megaphone, MessageSquareText, SlidersHorizontal, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAccounts } from "@/lib/account";
 import { AccountScopePicker, ScopeCtx } from "./settings/shared";
 import { TweaksSection } from "./settings/TweaksSection";
 import { MediaSection } from "./settings/MediaSection";
 import { QuickRepliesSection } from "./settings/QuickRepliesSection";
+import { TemplatesSection } from "./settings/TemplatesSection";
 import { KnowledgeSection } from "./settings/KnowledgeSection";
 import { SchedulerScreen } from "./SchedulerScreen";
 import { BroadcastScreen } from "./BroadcastScreen";
@@ -21,6 +22,7 @@ const FEATURES = [
   { id: "knowledge", icon: BookOpen, label: "Knowledge" },
   { id: "tweaks", icon: SlidersHorizontal, label: "Tweaks" },
   { id: "quickreplies", icon: Zap, label: "Quick replies" },
+  { id: "templates", icon: MessageSquareText, label: "Templates" },
 ] as const;
 type FeatureId = (typeof FEATURES)[number]["id"];
 
@@ -119,6 +121,25 @@ export function FeaturesScreen() {
                 </div>
                 <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 py-4 space-y-4">
                   <QuickRepliesSection />
+                </div>
+              </div>
+            </div>
+          </ScopeCtx.Provider>
+        )}
+        {tab === "templates" && (
+          <ScopeCtx.Provider value={{ scope: effectiveScope, setScope }}>
+            <div className="flex-1 overflow-auto p-6">
+              <div className="space-y-4">
+                <h1 className="text-xl font-semibold">Templates</h1>
+                <p className="text-xs text-neutral-500">
+                  Ready-made messages you pick from the + menu in a chat. {"{{name}}"} and {"{{phone}}"} are filled in with that chat's name
+                  and number.
+                </p>
+                <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800/60 px-3 py-2">
+                  <AccountScopePicker />
+                </div>
+                <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 py-4 space-y-4">
+                  <TemplatesSection />
                 </div>
               </div>
             </div>

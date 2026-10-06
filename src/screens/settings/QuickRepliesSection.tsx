@@ -2,7 +2,7 @@ import { useContext, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { deleteQuickReply, listQuickReplies, saveQuickReply, type QuickReply } from "@/store/quickReplies";
+import { deleteQuickReply, listQuickReplies, quickReplyError, saveQuickReply, type QuickReply } from "@/store/quickReplies";
 import { useAccounts } from "@/lib/account";
 import { ScopeCtx } from "./shared";
 import { Button, Input, Label } from "@/components/ui";
@@ -101,9 +101,9 @@ export function QuickRepliesSection() {
           <div className="flex gap-2">
             <Button
               onClick={async () => {
-                const shortcut = (editing.shortcut ?? "").replace(/^\//, "").trim();
-                if (!shortcut || /\s/.test(shortcut)) return setErr("Shortcut must be one word.");
-                if (!(editing.text ?? "").trim()) return setErr("Text is required.");
+                const shortcut = editing.shortcut ?? "";
+                const problem = quickReplyError(shortcut, editing.text ?? "", q.data ?? [], editing.id);
+                if (problem) return setErr(problem);
                 await saveQuickReply({
                   id: editing.id ?? Math.random().toString(36).slice(2, 10),
                   account: scope,

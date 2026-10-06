@@ -19,23 +19,31 @@ import {
   User,
   CircleDashed,
   Paperclip,
+  Image as ImageIcon,
+  Video,
+  FileText,
 } from "lucide-react";
-import { useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { accountId, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
 import { useAccountChats } from "@/lib/useAccountChats";
 import { AccountSelect } from "@/components/AccountSelect";
+import { ChatAvatar } from "@/components/ChatAvatar";
 import { openAccounts } from "@/components/NotConnected";
-import { Avatar, Button, Input, Label } from "@/components/ui";
+import { Button, Input, Label } from "@/components/ui";
 import { cn, displayId, fileToBase64, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { stripWaMarkdown } from "@/lib/waMarkdown";
 import {
   deleteSchedule,
   getSchedule,
   listRuns,
+  listScheduleMedia,
   listSchedules,
+  MAX_SCHEDULE_ATTACHMENTS,
   nextOccurrence,
+  replaceScheduleMedia,
   setEnabled,
   upsertSchedule,
   type Kind,
+  type MediaItem,
   type Repeat,
   type Schedule,
   type TargetType,
@@ -175,10 +183,10 @@ function Group({
                         .join(" ")}`
                     : ""}
                 </span>
-                {s.kind !== "text" && (
+                {(s.media_count ?? 0) > 0 && (
                   <span className="text-[10px] rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 text-neutral-600 dark:text-neutral-300 flex items-center gap-1">
                     <Paperclip size={10} />
-                    {s.kind}
+                    {s.media_count === 1 ? s.kind : `${s.media_count} files`}
                   </span>
                 )}
               </div>
@@ -250,6 +258,11 @@ function toLocalInput(unix: number) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** One attachment in the form: a newly picked `file`, or an existing one kept as `b64`. */
+type Draft = { key: string; kind: Kind; mime: string; name: string; file?: File; b64?: string };
+const uid = () => Math.random().toString(36).slice(2, 9);
+const kindOfFile = (file: File): Kind => (file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file");
+
 function ScheduleForm({
   defaultAccount,
   initial,
@@ -263,26 +276,67 @@ function ScheduleForm({
 }) {
   const [account, setAccount] = useState(initial?.account ?? defaultAccount);
   const chats = useAccountChats(account);
+  const nativeId = accountId(account) ?? "";
   const suffix = "@s.whatsapp.net";
   const [targetType, setTargetType] = useState<TargetType>(initial?.target_type ?? "chat");
   const [targetId, setTargetId] = useState(initial?.target_id ?? "");
   const [targetName, setTargetName] = useState(initial?.target_name ?? "");
   const [q, setQ] = useState("");
   const [text, setText] = useState(initial?.text ?? "");
-  const [file, setFile] = useState<File | null>(null);
-  const [keepMedia, setKeepMedia] = useState(!!initial?.media_name);
+  const [media, setMedia] = useState<Draft[]>([]);
+  const [mediaErr, setMediaErr] = useState<string | null>(null);
   const [when, setWhen] = useState(toLocalInput(initial?.next_run ?? Math.floor(Date.now() / 1000) + 3600));
   const [repeat, setRepeat] = useState<Repeat>(initial?.repeat ?? "once");
   const [weekdays, setWeekdays] = useState<number[]>(initial?.weekdays ? initial.weekdays.split(",").map(Number) : [new Date().getDay()]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const initialId = initial?.id ?? null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // Editing: load the attachments already stored for this schedule.
+  useEffect(() => {
+    if (!initialId) return;
+    let alive = true;
+    listScheduleMedia(initialId)
+      .then((rows) => {
+        if (alive) setMedia(rows.map((m) => ({ key: uid(), kind: m.kind, mime: m.mime ?? "", name: m.name ?? "", b64: m.b64 })));
+      })
+      .catch((e) => console.warn("load schedule media failed", e));
+    return () => {
+      alive = false;
+    };
+  }, [initialId]);
+
+  const addFiles = (picked: File[]) => {
+    if (!picked.length) return;
+    let allowed = picked;
+    if (targetType === "status") {
+      const ok = picked.filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+      if (ok.length < picked.length) setMediaErr("A story can only be a photo or a video.");
+      allowed = ok;
+    }
+    const room = MAX_SCHEDULE_ATTACHMENTS - media.length;
+    if (room <= 0) {
+      setMediaErr(`At most ${MAX_SCHEDULE_ATTACHMENTS} attachments per schedule.`);
+      return;
+    }
+    if (allowed.length > room) setMediaErr(`At most ${MAX_SCHEDULE_ATTACHMENTS} attachments per schedule.`);
+    else setMediaErr(null);
+    const add: Draft[] = allowed.slice(0, room).map((f) => ({
+      key: uid(),
+      kind: kindOfFile(f),
+      mime: f.type || "application/octet-stream",
+      name: f.name,
+      file: f,
+    }));
+    setMedia((m) => [...m, ...add]);
+  };
 
   const candidates = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -292,24 +346,16 @@ function ScheduleForm({
       .slice(0, 30);
   }, [chats, q]);
 
-  const kind: Kind = file
-    ? file.type.startsWith("image/")
-      ? "image"
-      : file.type.startsWith("video/")
-        ? "video"
-        : "file"
-    : keepMedia && initial
-      ? initial.kind
-      : "text";
+  const kind: Kind = media[0]?.kind ?? "text";
   const whenUnix = Math.floor(new Date(when).getTime() / 1000);
   const nowUnix = Math.floor(Date.now() / 1000);
   const inPast = Number.isFinite(whenUnix) && whenUnix <= nowUnix;
   const valid =
     (targetType === "status" || targetId) &&
-    (text.trim() || file || keepMedia) &&
+    (text.trim() || media.length > 0) &&
     Number.isFinite(whenUnix) &&
     (repeat !== "weekly" || weekdays.length > 0) &&
-    !(targetType === "status" && kind === "file") &&
+    !(targetType === "status" && media.some((m) => m.kind === "file")) &&
     !(repeat === "once" && inPast);
 
   const save = async () => {
@@ -321,8 +367,17 @@ function ScheduleForm({
       if (repeat === "once" && firstRun <= now) throw new Error("That time has already passed — pick a time in the future.");
       if (repeat !== "once" && firstRun <= now)
         firstRun = nextOccurrence({ next_run: whenUnix, repeat, weekdays: weekdays.join(",") }, now) ?? whenUnix;
+      const id = initial?.id ?? Math.random().toString(36).slice(2, 12);
+      const items: MediaItem[] = await Promise.all(
+        media.map(async (m) => ({
+          kind: m.kind,
+          mime: m.mime,
+          name: m.name,
+          b64: m.b64 ?? (await fileToBase64(m.file!)),
+        })),
+      );
       await upsertSchedule({
-        id: initial?.id ?? Math.random().toString(36).slice(2, 12),
+        id,
         account,
         profile: "",
         session: "",
@@ -331,9 +386,9 @@ function ScheduleForm({
         target_name: targetType === "status" ? null : targetName || null,
         kind,
         text: text.trim() || null,
-        media_b64: file ? await fileToBase64(file) : null, // null keeps the existing media on edit
-        media_mime: file ? file.type || "application/octet-stream" : null,
-        media_name: file ? file.name : null,
+        media_b64: null,
+        media_mime: null,
+        media_name: null,
         next_run: firstRun,
         anchor: whenUnix,
         repeat,
@@ -341,6 +396,7 @@ function ScheduleForm({
         enabled: 1,
         created_at: initial?.created_at,
       });
+      await replaceScheduleMedia(id, items);
       onSaved();
     } catch (e) {
       setErr(errMsg(e));
@@ -378,7 +434,15 @@ function ScheduleForm({
               <Button size="sm" variant={targetType === "chat" ? "primary" : "secondary"} onClick={() => setTargetType("chat")}>
                 Contact / group / channel
               </Button>
-              <Button size="sm" variant={targetType === "status" ? "primary" : "secondary"} onClick={() => setTargetType("status")}>
+              <Button
+                size="sm"
+                variant={targetType === "status" ? "primary" : "secondary"}
+                onClick={() => {
+                  setTargetType("status");
+                  // A story only takes photos and videos: drop anything else already attached.
+                  setMedia((list) => list.filter((m) => m.kind === "image" || m.kind === "video"));
+                }}
+              >
                 <CircleDashed size={12} /> My status
               </Button>
             </div>
@@ -386,7 +450,7 @@ function ScheduleForm({
               <div className="rounded-lg border border-neutral-200 dark:border-neutral-700">
                 {targetId ? (
                   <div className="flex items-center gap-2 px-3 py-2">
-                    <Avatar name={targetName || displayId(targetId)} size={28} />
+                    <ChatAvatar accountId={nativeId} chatId={targetId} name={targetName || displayId(targetId)} size={28} />
                     <span className="flex-1 truncate text-sm">
                       {targetName || displayId(targetId)} <span className="text-xs text-neutral-500">{targetId}</span>
                     </span>
@@ -418,7 +482,7 @@ function ScheduleForm({
                           }}
                           className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         >
-                          <Avatar name={c.name || displayId(c.id)} size={26} />
+                          <ChatAvatar accountId={nativeId} chatId={c.id} name={c.name || displayId(c.id)} size={26} />
                           <span className="flex-1 truncate">{c.name || displayId(c.id)}</span>
                           {isChannel(c.id) ? (
                             <Megaphone size={12} className="text-neutral-400" />
@@ -447,7 +511,7 @@ function ScheduleForm({
           </div>
 
           <div>
-            <Label>{file || keepMedia ? "Caption" : "Message"}</Label>
+            <Label>{media.length ? "Caption" : "Message"}</Label>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -460,29 +524,41 @@ function ScheduleForm({
                 ref={fileRef}
                 type="file"
                 hidden
+                multiple
                 accept={targetType === "status" ? "image/*,video/*" : undefined}
                 onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null);
-                  setKeepMedia(false);
+                  addFiles(Array.from(e.target.files ?? []));
+                  e.target.value = "";
                 }}
               />
-              <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
-                <Paperclip size={12} /> {file || keepMedia ? "Change attachment" : "Attach photo / video / file"}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => fileRef.current?.click()}
+                disabled={media.length >= MAX_SCHEDULE_ATTACHMENTS}
+              >
+                <Paperclip size={12} /> Attach photo / video / file
               </Button>
-              {(file || keepMedia) && (
-                <span className="text-xs text-neutral-500 flex items-center gap-1">
-                  {file?.name ?? initial?.media_name}{" "}
-                  <button
-                    onClick={() => {
-                      setFile(null);
-                      setKeepMedia(false);
-                    }}
-                  >
-                    <X size={12} />
-                  </button>
+              {media.length > 0 && (
+                <span className="text-xs text-neutral-500">
+                  {media.length}/{MAX_SCHEDULE_ATTACHMENTS}
                 </span>
               )}
             </div>
+            {media.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {media.map((m) => (
+                  <li key={m.key} className="flex items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2 py-1 text-xs">
+                    {m.kind === "image" ? <ImageIcon size={12} /> : m.kind === "video" ? <Video size={12} /> : <FileText size={12} />}
+                    <span className="flex-1 truncate">{m.name}</span>
+                    <button onClick={() => setMedia((list) => list.filter((x) => x.key !== m.key))}>
+                      <X size={12} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {mediaErr && <div className="text-[11px] text-amber-600 mt-1">{mediaErr}</div>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

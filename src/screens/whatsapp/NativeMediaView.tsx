@@ -4,11 +4,13 @@ import { Download, FileText, Loader2, Maximize, Mic, Music, Play } from "lucide-
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { Lightbox } from "@/components/Lightbox";
-import { nativeAccountKey } from "@/lib/account";
+import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { cacheGet, cachePut, formatBytes, mediaCacheKey, type CacheMeta } from "@/lib/mediaCache";
 import { queueMediaDownload } from "@/lib/mediaQueue";
 import { nativeWa, type NativeMessage } from "@/lib/nativeWa";
 import { cn, errMsg } from "@/lib/utils";
+import { useChatPrefs } from "@/store/chatPrefs";
+import { useMediaBlur } from "@/store/mediaBlur";
 import { shouldAutoLoad, useMediaPrefs } from "@/store/settings";
 import { useWhatsApp } from "@/store/whatsapp";
 
@@ -92,6 +94,9 @@ export function NativeMediaView({
   const [open, setOpen] = useState(false);
   const [startAt, setStartAt] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Only chats the user blurred show blurred media, and only until "Reveal all" is used there.
+  const chatBlurred = useChatPrefs((s) => !!s.blurred[nativeChatKey(accountId, m.chatId)]);
+  const chatRevealAll = useMediaBlur((s) => !!s.chatRevealAll[`${accountId}:${m.chatId}`]);
 
   // Serve from the cache whenever possible; download when wanted (auto-load or click).
   useEffect(() => {
@@ -198,6 +203,8 @@ export function NativeMediaView({
   const ratio = media.width && media.height ? media.width / media.height : 4 / 3;
   const width = Math.min(300, Math.max(160, ratio >= 1 ? 300 : 300 * ratio));
   const isVideo = media.kind === "video";
+  const blurred = chatBlurred && !chatRevealAll;
+  const blurCls = blurred ? "blur-md scale-105 transform-gpu group-hover:blur-none transition-[filter] duration-150" : "";
   return (
     <div>
       <div
@@ -209,7 +216,7 @@ export function NativeMediaView({
       >
         {url && isVideo ? (
           <>
-            <video ref={videoRef} src={url} controls className="w-full h-full object-contain bg-black" />
+            <video ref={videoRef} src={url} controls className={cn("w-full h-full object-contain bg-black", blurCls)} />
             <button
               onClick={() => {
                 const v = videoRef.current;
@@ -225,11 +232,11 @@ export function NativeMediaView({
           </>
         ) : url ? (
           <button onClick={() => setOpen(true)} className="block w-full h-full" title="Open">
-            <img src={url} alt="" className="w-full h-full object-cover" />
+            <img src={url} alt="" className={cn("w-full h-full object-cover", blurCls)} />
           </button>
         ) : (
           <button onClick={fetchNow} className="block w-full h-full" title={isVideo ? "Play video" : "Download photo"}>
-            {media.thumbnail && <img src={media.thumbnail} alt="" className="w-full h-full object-cover blur-[2px] scale-105" />}
+            {media.thumbnail && <img src={media.thumbnail} alt="" className={cn("w-full h-full object-cover", blurCls)} />}
             <span className="absolute inset-0 grid place-items-center">
               <span className={cn("rounded-full bg-black/50 text-white p-3", loading && "p-2.5")}>
                 {loading ? <Loader2 size={20} className="animate-spin" /> : isVideo ? <Play size={20} /> : <Download size={20} />}

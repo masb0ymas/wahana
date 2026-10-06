@@ -1,22 +1,33 @@
 import { useEffect, useState } from "react";
-import { nativeWa, onNativeMessages, onNativeTyping } from "@/lib/nativeWa";
+import { nativeWa, onNativeMessages, onNativePresence, onNativeTyping } from "@/lib/nativeWa";
 import { isGroup } from "@/lib/utils";
 
 type Typist = { name: string | null; recording: boolean; at: number };
+/** Whether the contact is online, and when they were last seen (unix ms, null when hidden). */
+export type Presence = { online: boolean; lastSeen: number | null };
 
 /** WhatsApp sends no "paused" when a phone drops off mid-sentence; a stale typing state lapses after this. */
 const STALE_MS = 25_000;
 
 /**
- * Who is typing in the open chat right now. Only the open chat is watched: the account
- * goes online and subscribes to the contact's presence while it is open, and stops on close.
+ * Who is typing in the open chat right now, and whether the contact is online. Only the open
+ * chat is watched: the account goes online and subscribes to the contact's presence while it
+ * is open, and stops on close.
  */
 export function useNativeTyping(accountId: string, chatId: string, connected: boolean) {
   const [typists, setTypists] = useState<Record<string, Typist>>({});
+  const [presence, setPresence] = useState<Presence | null>(null);
 
   useEffect(() => {
     setTypists({});
+    setPresence(null);
     if (!connected) return;
+    const online = onNativePresence((p) => {
+      if (p.id !== accountId || !p.chatIds.includes(chatId)) return;
+      // A presence without a last-seen keeps the one already known.
+      setPresence((prev) => ({ online: p.online, lastSeen: p.lastSeen ?? prev?.lastSeen ?? null }));
+      if (!p.online) setTypists({});
+    });
     void nativeWa.watchTyping(accountId, chatId, true).catch(() => {});
     const typing = onNativeTyping((t) => {
       if (t.id !== accountId || !t.chatIds.includes(chatId)) return;
@@ -45,11 +56,12 @@ export function useNativeTyping(accountId: string, chatId: string, connected: bo
     }, 5_000);
     return () => {
       clearInterval(sweep);
+      void online.then((u) => u());
       void typing.then((u) => u());
       void messages.then((u) => u());
       void nativeWa.watchTyping(accountId, chatId, false).catch(() => {});
     };
   }, [accountId, chatId, connected]);
 
-  return typists;
+  return { typists, presence };
 }

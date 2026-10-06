@@ -2,6 +2,7 @@ import { useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { CheckCircle2, Download, Loader2, Upload, XCircle } from "lucide-react";
 import { exportBackup, pickBackup, restoreBackup, type Backup, type NativeRestore, type RestoreOptions } from "@/lib/backup";
+import { MAX_ACCOUNTS } from "@/lib/account";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui";
 import { errMsg } from "@/lib/utils";
@@ -15,6 +16,7 @@ function describeNative(rs: NativeRestore[]) {
   return [
     names("added") && `WhatsApp added, scan the QR in Sessions: ${names("added")}.`,
     names("exists") && `Already on this device, left as is: ${names("exists")}.`,
+    names("skipped") && `Not added, at most ${MAX_ACCOUNTS} accounts can be linked: ${names("skipped")}.`,
   ]
     .filter(Boolean)
     .map((t) => `${t} `)
@@ -44,9 +46,9 @@ export function BackupSection() {
       <div className="space-y-2">
         <div className="text-sm font-medium">Export</div>
         <p className="text-xs text-neutral-500">
-          Includes: preferences, theme, AI settings, pinned/muted/archived chats, pinned messages, quick replies, schedules (without
-          attachments), auto-reply rules, knowledge base entries, saved stickers, WhatsApp account names. Not included: message history,
-          media cache, broadcast history, WhatsApp logins — restored accounts need a new QR scan.
+          Includes: preferences, theme, AI settings, pinned/muted/archived chats, pinned messages, quick replies, templates, schedules
+          (without attachments), auto-reply rules, knowledge base entries, saved stickers, WhatsApp account names. Not included: message
+          history, media cache, broadcast history, WhatsApp logins — restored accounts need a new QR scan.
         </p>
         <label className="flex items-start gap-2 text-sm cursor-pointer">
           <input type="checkbox" className="mt-1" checked={includeSecrets} onChange={(e) => setIncludeSecrets(e.target.checked)} />
@@ -113,10 +115,10 @@ export function BackupSection() {
             <div className="text-xs text-neutral-500 selectable truncate">{pending.path}</div>
             <div className="text-xs text-neutral-500">
               Exported {new Date(pending.backup.exportedAt).toLocaleString()} · app {pending.backup.appVersion} ·{" "}
-              {pending.backup.quickReplies?.length ?? 0} quick replies · {pending.backup.schedules?.length ?? 0} schedules ·{" "}
-              {pending.backup.autoReplyRules?.length ?? 0} auto-reply rules · {Object.keys(pending.backup.messagePins ?? {}).length} pinned
-              messages · {pending.backup.knowledge?.length ?? 0} knowledge entries · {pending.backup.stickers?.length ?? 0} stickers ·{" "}
-              {pending.backup.nativeAccounts?.length ?? 0} WhatsApp account(s)
+              {pending.backup.quickReplies?.length ?? 0} quick replies · {pending.backup.templates?.length ?? 0} templates ·{" "}
+              {pending.backup.schedules?.length ?? 0} schedules · {pending.backup.autoReplyRules?.length ?? 0} auto-reply rules ·{" "}
+              {Object.keys(pending.backup.messagePins ?? {}).length} pinned messages · {pending.backup.knowledge?.length ?? 0} knowledge
+              entries · {pending.backup.stickers?.length ?? 0} stickers · {pending.backup.nativeAccounts?.length ?? 0} WhatsApp account(s)
               {pending.backup.secrets ? " · includes API keys" : ""}
             </div>
             <div className="grid grid-cols-2 gap-1 text-sm">
@@ -125,7 +127,7 @@ export function BackupSection() {
                   ["prefs", "Preferences, theme & AI"],
                   ["chatPrefs", "Pinned / muted / archived chats"],
                   ["messagePins", "Pinned messages"],
-                  ["quickReplies", "Quick replies"],
+                  ["quickReplies", "Quick replies & templates"],
                   ["schedules", "Schedules"],
                   ["autoReplies", "Auto-reply rules"],
                   ["knowledge", "Knowledge base"],

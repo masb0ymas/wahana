@@ -51,7 +51,7 @@ function toStory(m: NativeStatus): Story {
   return { m, kind, thumb: m.media?.thumbnail ?? null, text: m.body };
 }
 
-export function NativeStatusScreen({ account }: { account: NativeAccount }) {
+export function NativeStatusScreen({ account, header }: { account: NativeAccount; header?: React.ReactNode }) {
   const connected = account.status === "working";
   const seen = useStatusSeen((s) => s.seen);
   const hydrateSeen = useStatusSeen((s) => s.hydrate);
@@ -148,7 +148,14 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
   };
 
   if (!connected) {
-    return <div className="flex-1 grid place-items-center text-sm text-neutral-500">Connect this account to see status.</div>;
+    return (
+      <div className="flex-1 grid place-items-center">
+        <div className="flex flex-col items-center gap-3">
+          {header && <div className="w-64">{header}</div>}
+          <p className="text-sm text-neutral-500">Connect this account to see status.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -156,15 +163,7 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
       <div className="w-80 shrink-0 flex flex-col border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
         <div className="shrink-0 border-b border-neutral-200 dark:border-neutral-800">
           <div className="h-14 flex items-center gap-2 px-4">
-            <span className="font-semibold flex-1 flex items-center gap-2">
-              Status{" "}
-              <span
-                className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal"
-                title="Native account"
-              >
-                {account.name}
-              </span>
-            </span>
+            <span className="font-semibold flex-1">Status</span>
             <Button size="sm" variant="ghost" onClick={() => setTick((t) => t + 1)} title="Refresh">
               <RefreshCw size={14} />
             </Button>
@@ -172,6 +171,7 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
               <Plus size={14} />
             </Button>
           </div>
+          {header && <div className="px-3 pb-2">{header}</div>}
           <div className="relative px-3 pb-3">
             <Search size={14} className="absolute left-5.5 top-2.5 text-neutral-400" />
             <input
@@ -212,8 +212,12 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
                   <div className="min-w-0 flex-1">
                     <div className="font-medium truncate">{g.name}</div>
                     <div className={cn("text-xs", g.unseen ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500")}>
-                      {g.unseen ? `${g.unseen} new · ` : ""}
-                      {g.stories.length} update{g.stories.length === 1 ? "" : "s"} · {formatTime(Math.floor(last.m.timestamp / 1000))}
+                      {/* One count, not two: "3 new" when all are unwatched, "2 of 5 new" when some
+                          are, "5 updates" once all are watched. */}
+                      {g.unseen
+                        ? `${g.unseen === g.stories.length ? g.unseen : `${g.unseen} of ${g.stories.length}`} new`
+                        : `${g.stories.length} update${g.stories.length === 1 ? "" : "s"}`}{" "}
+                      · {formatTime(Math.floor(last.m.timestamp / 1000))}
                     </div>
                   </div>
                 </button>

@@ -6,6 +6,8 @@ import {
   Check,
   Copy,
   Crown,
+  Eye,
+  EyeOff,
   FileText,
   Globe,
   Image as ImageIcon,
@@ -39,6 +41,7 @@ import { WaMarkdown } from "@/lib/waMarkdown";
 import { MuteControl } from "@/components/MuteControl";
 import { nativeChatKey } from "@/lib/account";
 import { useChatPrefs } from "@/store/chatPrefs";
+import { useMediaBlur } from "@/store/mediaBlur";
 import { NativeChannelRows } from "@/screens/whatsapp/NativeChannel";
 import { MemberMenu, NativeGroupTools } from "@/screens/whatsapp/NativeGroupManage";
 import { nativeMediaBlob, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
@@ -599,7 +602,7 @@ function NativeChatMedia({ accountId, chatId }: { accountId: string; chatId: str
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         {error && <p className="text-xs text-red-600 selectable py-2">{error}</p>}
-        {tab === "media" && <MediaGrid accountId={accountId} items={buckets.visual} />}
+        {tab === "media" && <MediaGrid accountId={accountId} chatId={chatId} items={buckets.visual} />}
         {tab === "links" && <LinkList items={buckets.links} />}
         {tab === "docs" && <DocList accountId={accountId} items={buckets.docs} />}
         <div className="pt-3 text-center">
@@ -614,10 +617,14 @@ function NativeChatMedia({ accountId, chatId }: { accountId: string; chatId: str
   );
 }
 
-function MediaGrid({ accountId, items }: { accountId: string; items: NativeMessage[] }) {
+function MediaGrid({ accountId, chatId, items }: { accountId: string; chatId: string; items: NativeMessage[] }) {
   const [open, setOpen] = useState<LightboxItem | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const chatBlurred = useChatPrefs((s) => !!s.blurred[nativeChatKey(accountId, chatId)]);
+  const revealAll = useMediaBlur((s) => !!s.chatRevealAll[`${accountId}:${chatId}`]);
+  const toggleChatReveal = useMediaBlur((s) => s.toggleChatReveal);
+  const blurred = chatBlurred && !revealAll;
 
   const view = async (m: NativeMessage) => {
     setBusy(m.id);
@@ -643,16 +650,33 @@ function MediaGrid({ accountId, items }: { accountId: string; items: NativeMessa
   return (
     <>
       {error && <p className="text-xs text-red-600 selectable pb-2">{error}</p>}
+      {chatBlurred && (
+        <div className="flex justify-end pb-2">
+          <button
+            onClick={() => toggleChatReveal(`${accountId}:${chatId}`)}
+            className="flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1 text-xs font-medium hover:bg-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {revealAll ? <EyeOff size={12} /> : <Eye size={12} />} {revealAll ? "Blur all" : "Reveal all"}
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-1">
         {items.map((m) => (
           <button
             key={m.id}
             onClick={() => view(m)}
-            className="relative aspect-square rounded-md overflow-hidden bg-neutral-200 dark:bg-neutral-800 grid place-items-center"
+            className="group relative aspect-square rounded-md overflow-hidden bg-neutral-200 dark:bg-neutral-800 grid place-items-center"
             title={formatTime(Math.floor(m.timestamp / 1000))}
           >
             {m.media!.thumbnail ? (
-              <img src={m.media!.thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <img
+                src={m.media!.thumbnail}
+                alt=""
+                className={cn(
+                  "absolute inset-0 w-full h-full object-cover",
+                  blurred && "blur-md scale-105 transform-gpu group-hover:blur-none transition-[filter] duration-150",
+                )}
+              />
             ) : (
               <ImageIcon size={18} className="text-neutral-400" />
             )}

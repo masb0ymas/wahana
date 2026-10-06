@@ -11,6 +11,9 @@ export interface AccountRef {
 
 export const nativeAccountKey = (id: string) => `native:${id}`;
 
+/** Most WhatsApp accounts that can be linked at once. */
+export const MAX_ACCOUNTS = 5;
+
 /** Key for a native chat, used by the shared per-chat prefs (pin, mute). */
 export const nativeChatKey = (accountId: string, chatId: string) => `native:${accountId}:${chatId}`;
 

@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.2.1 — 2026-10-06
+
+### Added
+
+- Polls, locations, live locations and shared contacts show as cards instead of "Unsupported message". A shared contact opens its chat in Wahana.
+- Chat pins sync with WhatsApp: pins made on the phone show here and come back after re-linking. Past WhatsApp's three, extra pins are kept in Wahana only.
+- The Status page has an account picker, also when the active account is disconnected.
+- Settings → About links to the source code, bug reports and release notes.
+
+### Changed
+
+- The chat filter tabs sit on one row that scrolls sideways, with < > buttons when they overflow; the chat actions move to the row below.
+- Multi-account links a new account from a header button instead of a grid card.
+- Status rows show one count ("3 new", "2 of 5 new", "5 updates").
+- Tighter content security policy: remote images only from WhatsApp's CDN, no direct webview connections to arbitrary hosts.
+
+### Fixed
+
+- Dialogs opened from a grid tile stay inside that tile.
+- The account's own number no longer shows a device suffix or a privacy id.
+- Contacts without digits and invalid location coordinates no longer break their cards.
+- rustls 0.23.45 (RUSTSEC-2026-0285).
+
 ## 1.2.0 — 2026-10-05
 
 ### Fixed

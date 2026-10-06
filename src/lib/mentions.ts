@@ -51,3 +51,18 @@ export function mentionResolver(details: NativeChatDetails | undefined, meId?: s
     return names.get(digits);
   };
 }
+
+/**
+ * The chat ids (privacy id, then phone) of the group member a mention's digits point at, or
+ * null for yourself or someone not in the group: bare digits do not say whether they are a
+ * phone number or a privacy id, so a stranger cannot be opened safely.
+ */
+export function mentionChatIds(details: NativeChatDetails | undefined, digits: string, meId?: string): string[] | null {
+  if (details?.type !== "group") return null;
+  const d = mentionDigits(digits);
+  const member = details.members.find((m) => mentionDigits(m.id) === d || (m.phone && mentionDigits(m.phone) === d));
+  if (!member || member.isMe || (meId && mentionDigits(meId) === d)) return null;
+  const ids = [member.id];
+  if (member.phone) ids.push(`${mentionDigits(member.phone)}@s.whatsapp.net`);
+  return ids;
+}

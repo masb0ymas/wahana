@@ -39,12 +39,17 @@ interface State {
   takeover: Record<string, Takeover>;
   hydrate: () => Promise<void>;
   toggle: (flag: Flag, key: string, value?: boolean) => void;
+  /** Pin at `at` (epoch ms, which orders pins) or unpin with null. */
+  setPinned: (key: string, at: number | null) => void;
   /** `until`: epoch ms, MUTE_FOREVER, or null to unmute. */
   setMuted: (key: string, until: number | null) => void;
   setAutoTranslate: (key: string, patch: AutoTranslate) => void;
   /** `name` takes the chat over; null releases it back to auto-reply. */
   setTakeover: (account: string, chatId: string, name: string | null) => void;
 }
+
+/** Settles once the stored prefs are loaded, so a save never writes the empty defaults over them. */
+let hydrating: Promise<void> | null = null;
 
 export const useChatPrefs = create<State>((set) => ({
   pinned: {},
@@ -53,16 +58,19 @@ export const useChatPrefs = create<State>((set) => ({
   blurred: {},
   autoTranslate: {},
   takeover: {},
-  async hydrate() {
-    const s = await store();
-    set({
-      pinned: (await s.get<Record<string, number>>("pinned")) ?? {},
-      muted: (await s.get<Record<string, number>>("muted")) ?? {},
-      archived: (await s.get<Record<string, 1>>("archived")) ?? {},
-      blurred: (await s.get<Record<string, 1>>("blurred")) ?? {},
-      autoTranslate: (await s.get<Record<string, AutoTranslate>>("autoTranslate")) ?? {},
-      takeover: (await s.get<Record<string, Takeover>>("takeover")) ?? {},
-    });
+  hydrate() {
+    hydrating = (async () => {
+      const s = await store();
+      set({
+        pinned: (await s.get<Record<string, number>>("pinned")) ?? {},
+        muted: (await s.get<Record<string, number>>("muted")) ?? {},
+        archived: (await s.get<Record<string, 1>>("archived")) ?? {},
+        blurred: (await s.get<Record<string, 1>>("blurred")) ?? {},
+        autoTranslate: (await s.get<Record<string, AutoTranslate>>("autoTranslate")) ?? {},
+        takeover: (await s.get<Record<string, Takeover>>("takeover")) ?? {},
+      });
+    })();
+    return hydrating;
   },
   toggle(flag, key, value) {
     set((st) => {
@@ -71,6 +79,15 @@ export const useChatPrefs = create<State>((set) => ({
       if (on) next[key] = flag === "pinned" ? Date.now() : 1;
       else delete next[key];
       return { [flag]: next } as Partial<State>;
+    });
+    schedule();
+  },
+  setPinned(key, at) {
+    set((st) => {
+      const next = { ...st.pinned };
+      if (at === null) delete next[key];
+      else next[key] = at;
+      return { pinned: next };
     });
     schedule();
   },
@@ -111,7 +128,7 @@ function schedule() {
   clearTimeout(flush);
   flush = setTimeout(
     () =>
-      void store().then(async (s) => {
+      void Promise.all([store(), hydrating]).then(async ([s]) => {
         const st = useChatPrefs.getState();
         await s.set("pinned", st.pinned);
         await s.set("muted", st.muted);

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckSquare,
+  Eye,
+  EyeOff,
   FileText,
   HardDrive,
   Image as ImageIcon,
@@ -20,6 +22,7 @@ import { Lightbox, type LightboxItem } from "@/components/Lightbox";
 import { Button } from "@/components/ui";
 import { cacheDelete, cacheList, cacheRead, formatBytes, type CacheEntry } from "@/lib/mediaCache";
 import { nativeWa } from "@/lib/nativeWa";
+import { useMediaBlur } from "@/store/mediaBlur";
 import { cn, displayId, errMsg } from "@/lib/utils";
 import { useWhatsApp } from "@/store/whatsapp";
 
@@ -94,6 +97,9 @@ export function MediaScreen() {
   const [sort, setSort] = useState<Sort>("newest");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  // Page-wide override, persisted: once revealed, tiles stay unblurred until "Blur all" is clicked.
+  const revealAll = useMediaBlur((s) => s.revealAll);
+  const setRevealAll = useMediaBlur((s) => s.setRevealAll);
   const [chatNames, setChatNames] = useState<Record<string, string>>({});
   const [viewer, setViewer] = useState<LightboxItem | null>(null);
   const [playing, setPlaying] = useState<{ file: string; url: string; title: string } | null>(null);
@@ -337,6 +343,15 @@ export function MediaScreen() {
                 <option value="newest">Newest first</option>
                 <option value="largest">Largest first</option>
               </select>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!shown.length && !revealAll}
+                onClick={() => setRevealAll(!revealAll)}
+                title={revealAll ? "Blur all media again" : "Show all media without blur"}
+              >
+                {revealAll ? <EyeOff size={12} /> : <Eye size={12} />} {revealAll ? "Blur all" : "Reveal all"}
+              </Button>
               <Button size="sm" variant="ghost" disabled={!shown.length} onClick={() => setSelected(new Set(shown.map((r) => r.file)))}>
                 <CheckSquare size={12} /> Select all
               </Button>
@@ -374,6 +389,7 @@ export function MediaScreen() {
                   selected={selected.has(r.file)}
                   selecting={selectedRows.length > 0}
                   playing={playing?.file === r.file}
+                  revealAll={revealAll}
                   onToggle={() => toggle(r.file)}
                   onOpen={() => open(r)}
                   onDelete={() => remove([r])}
@@ -439,6 +455,7 @@ function Tile({
   selected,
   selecting,
   playing,
+  revealAll,
   onToggle,
   onOpen,
   onDelete,
@@ -448,6 +465,7 @@ function Tile({
   selected: boolean;
   selecting: boolean;
   playing: boolean;
+  revealAll: boolean;
   onToggle: () => void;
   onOpen: () => void;
   onDelete: () => void;
@@ -456,6 +474,8 @@ function Tile({
   const [visible, setVisible] = useState(false);
   const [thumb, setThumb] = useState<string | null>(null);
   const wantsThumb = r.kind === "image" || (r.kind === "video" && r.bytes <= VIDEO_THUMB_MAX);
+  // Blurred by default; the page's "Reveal all" toggle clears every tile until it is blurred again.
+  const blurred = !revealAll;
 
   // Load the bytes only once the tile scrolls into view.
   useEffect(() => {
@@ -487,6 +507,10 @@ function Tile({
   const Icon = r.kind === "video" ? Video : r.kind === "audio" ? Music : r.kind === "image" ? ImageIcon : FileText;
   const date = new Date(r.meta?.timestamp || r.saved).toLocaleString();
   const name = r.kind === "document" || r.kind === "audio" ? r.meta?.fileName : null;
+  const blurCls =
+    blurred && (r.kind === "image" || r.kind === "video")
+      ? "blur-md scale-105 transform-gpu group-hover:blur-none transition-[filter] duration-150"
+      : "";
 
   return (
     <div
@@ -499,9 +523,9 @@ function Tile({
       )}
       onClick={selecting ? onToggle : onOpen}
     >
-      {thumb && r.kind === "image" && <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+      {thumb && r.kind === "image" && <img src={thumb} alt="" className={cn("absolute inset-0 w-full h-full object-cover", blurCls)} />}
       {thumb && r.kind === "video" && (
-        <video src={`${thumb}#t=0.1`} muted preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+        <video src={`${thumb}#t=0.1`} muted preload="metadata" className={cn("absolute inset-0 w-full h-full object-cover", blurCls)} />
       )}
       {!thumb && (
         <div className="absolute inset-0 grid place-items-center text-neutral-400">

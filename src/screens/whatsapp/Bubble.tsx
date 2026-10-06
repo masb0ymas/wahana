@@ -115,6 +115,10 @@ export const Bubble = memo(function Bubble({
   const hasTail = tail && !sticker && !revoked;
   // Deleted messages keep their full text (struck through); a long body is clamped with a Read more toggle.
   const longBody = !revoked && !!m.body && (m.body.length > 350 || m.body.split("\n").length > 6);
+  // The chat blur keeps its hold on the text; media is blurred separately (per item) so it can be revealed.
+  const blurCls = "blur-[3px] transform-gpu group-hover/bubble:blur-none transition-[filter] duration-150";
+  // Photos and videos blur per item (with their own reveal button); other media stay under the bubble blur.
+  const revealableMedia = !!album || m.media?.kind === "image" || m.media?.kind === "video";
   // A channel reports totals only; mine comes from what I reacted locally.
   const reactions =
     m.channelReactions.length > 0
@@ -145,7 +149,7 @@ export const Bubble = memo(function Bubble({
           }}
           title="Right-click for more"
           className={cn(
-            "relative rounded-lg px-3 pt-2 pb-1.5 text-sm selectable",
+            "group/bubble relative rounded-lg px-3 pt-2 pb-1.5 text-sm selectable",
             hasTail && (mine ? "rounded-br-none" : "rounded-bl-none"),
             revoked
               ? cn(
@@ -159,7 +163,6 @@ export const Bubble = memo(function Bubble({
                 : mine
                   ? "bg-[#d9fdd3] dark:bg-wa-teal text-neutral-900 dark:text-white shadow-sm"
                   : "bg-white dark:bg-neutral-800 shadow-sm",
-            blurred && "blur-[3px] transform-gpu hover:blur-none transition-[filter] duration-150",
           )}
         >
           {hasTail && (
@@ -184,60 +187,64 @@ export const Bubble = memo(function Bubble({
               />
             </svg>
           )}
-          {revoked && (
-            <div className="flex items-center gap-1 text-xs italic text-neutral-500 dark:text-neutral-400 mb-0.5">
-              🚫 {mine ? "You deleted this message" : "This message was deleted"}
-              {m.revokedAt != null && <span className="not-italic text-[10px]">· {formatMessageTime(secs(m.revokedAt))}</span>}
-            </div>
-          )}
-          {showSender && (m.senderName || m.senderPhone) && (
-            <div className="flex items-baseline gap-1.5 text-[11px] mb-0.5">
-              <button
-                className="font-semibold text-wa-dark dark:text-wa hover:underline disabled:no-underline"
-                disabled={!avatarChatId}
-                onClick={() => avatarChatId && onProfile(avatarChatId)}
-              >
-                {m.senderName || m.senderPhone}
-              </button>
-              {m.senderPhone && m.senderName && m.senderName !== m.senderPhone && <span className="text-neutral-400">{m.senderPhone}</span>}
-            </div>
-          )}
-          {pinned && (
-            <div className="flex items-center gap-1 text-[10px] text-neutral-500 dark:text-neutral-300/70 mb-0.5">
-              <Pin size={10} /> Pinned
-            </div>
-          )}
-          {m.replyTo && (
-            <button
-              onClick={() => (m.replyTo!.status ? useStoryJump.getState().open(m.replyTo!.id) : onJumpTo(m.replyTo!))}
-              className={cn(
-                "mb-1 block w-full min-w-[140px] rounded-md border-l-4 border-wa-dark px-2 py-1 text-left text-xs",
-                mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",
-              )}
-            >
-              <div className="font-semibold text-wa-dark dark:text-wa truncate">
-                {m.replyTo.fromMe ? "You" : m.replyTo.senderName || "Message"}
+          <div className={cn(blurred && blurCls)}>
+            {revoked && (
+              <div className="flex items-center gap-1 text-xs italic text-neutral-500 dark:text-neutral-400 mb-0.5">
+                🚫 {mine ? "You deleted this message" : "This message was deleted"}
+                {m.revokedAt != null && <span className="not-italic text-[10px]">· {formatMessageTime(secs(m.revokedAt))}</span>}
               </div>
-              <div className="line-clamp-2 break-words text-neutral-600 dark:text-neutral-300">{m.replyTo.text || "Message"}</div>
-            </button>
-          )}
-          {!revoked && m.statusMention && (
-            <button
-              onClick={() => useStoryJump.getState().open(m.statusMention!)}
-              title="Open story"
-              className={cn(
-                "mb-1 flex w-full min-w-[160px] items-center gap-2 rounded-md border-l-4 border-[#ff8a65] px-2 py-1.5 text-left text-xs",
-                mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",
-              )}
-            >
-              <span className="text-base leading-none">📣</span>
-              <span className="flex-1">
-                <span className="block font-medium text-wa-dark dark:text-wa">Mentioned you in a story</span>
-                <span className="block text-[10px] text-neutral-500 dark:text-neutral-400">Tap to view</span>
-              </span>
-            </button>
-          )}
-          <div className={cn(revoked && "opacity-60")}>
+            )}
+            {showSender && (m.senderName || m.senderPhone) && (
+              <div className="flex items-baseline gap-1.5 text-[11px] mb-0.5">
+                <button
+                  className="font-semibold text-wa-dark dark:text-wa hover:underline disabled:no-underline"
+                  disabled={!avatarChatId}
+                  onClick={() => avatarChatId && onProfile(avatarChatId)}
+                >
+                  {m.senderName || m.senderPhone}
+                </button>
+                {m.senderPhone && m.senderName && m.senderName !== m.senderPhone && (
+                  <span className="text-neutral-400">{m.senderPhone}</span>
+                )}
+              </div>
+            )}
+            {pinned && (
+              <div className="flex items-center gap-1 text-[10px] text-neutral-500 dark:text-neutral-300/70 mb-0.5">
+                <Pin size={10} /> Pinned
+              </div>
+            )}
+            {m.replyTo && (
+              <button
+                onClick={() => (m.replyTo!.status ? useStoryJump.getState().open(m.replyTo!.id) : onJumpTo(m.replyTo!))}
+                className={cn(
+                  "mb-1 block w-full min-w-[140px] rounded-md border-l-4 border-wa-dark px-2 py-1 text-left text-xs",
+                  mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",
+                )}
+              >
+                <div className="font-semibold text-wa-dark dark:text-wa truncate">
+                  {m.replyTo.fromMe ? "You" : m.replyTo.senderName || "Message"}
+                </div>
+                <div className="line-clamp-2 break-words text-neutral-600 dark:text-neutral-300">{m.replyTo.text || "Message"}</div>
+              </button>
+            )}
+            {!revoked && m.statusMention && (
+              <button
+                onClick={() => useStoryJump.getState().open(m.statusMention!)}
+                title="Open story"
+                className={cn(
+                  "mb-1 flex w-full min-w-[160px] items-center gap-2 rounded-md border-l-4 border-[#ff8a65] px-2 py-1.5 text-left text-xs",
+                  mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",
+                )}
+              >
+                <span className="text-base leading-none">📣</span>
+                <span className="flex-1">
+                  <span className="block font-medium text-wa-dark dark:text-wa">Mentioned you in a story</span>
+                  <span className="block text-[10px] text-neutral-500 dark:text-neutral-400">Tap to view</span>
+                </span>
+              </button>
+            )}
+          </div>
+          <div className={cn(revoked && "opacity-60", !revealableMedia && blurred && blurCls)}>
             {album ? (
               album.length <= 4 ? (
                 <div className="mb-1 grid grid-cols-2 gap-0.5 w-[300px]">
@@ -274,6 +281,8 @@ export const Bubble = memo(function Bubble({
                 {m.kind === "media" ? "📎 Media (not available for this older message)" : "Unsupported message"}
               </div>
             ) : null}
+          </div>
+          <div className={cn(revoked && "opacity-60", blurred && blurCls)}>
             {album?.slice(1).map((a) =>
               a.body ? (
                 <div key={a.id} className="break-words">
@@ -297,35 +306,35 @@ export const Bubble = memo(function Bubble({
                 )}
               </div>
             )}
-          </div>
-          {showEdits && m.edits.length > 0 && (
-            <div className="mt-1 space-y-1 border-l-2 border-neutral-300 dark:border-neutral-600 pl-2">
-              {m.edits.map((e, i) => (
-                <div key={i} className="text-xs text-neutral-500 dark:text-neutral-400">
-                  <span className="line-through break-words">{e.body}</span>
-                  <span className="ml-1 text-[10px]">· replaced {formatMessageTime(secs(e.replacedAt))}</span>
-                </div>
-              ))}
+            {showEdits && m.edits.length > 0 && (
+              <div className="mt-1 space-y-1 border-l-2 border-neutral-300 dark:border-neutral-600 pl-2">
+                {m.edits.map((e, i) => (
+                  <div key={i} className="text-xs text-neutral-500 dark:text-neutral-400">
+                    <span className="line-through break-words">{e.body}</span>
+                    <span className="ml-1 text-[10px]">· replaced {formatMessageTime(secs(e.replacedAt))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <TranslationView id={m.id} />
+            <ImageNoteView id={m.id} />
+            <ReplySuggestView id={m.id} onPick={onPickReply} />
+            <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
+              {m.editedAt != null &&
+                (m.edits.length > 0 ? (
+                  <button
+                    onClick={() => setShowEdits((v) => !v)}
+                    title={showEdits ? "Hide earlier versions" : `Show ${m.edits.length} earlier version${m.edits.length > 1 ? "s" : ""}`}
+                    className="italic underline decoration-dotted hover:text-neutral-700 dark:hover:text-neutral-200"
+                  >
+                    edited
+                  </button>
+                ) : (
+                  <span className="italic">edited</span>
+                ))}
+              {formatMessageTime(secs(m.timestamp))}
+              {mine && <AckIcon ack={m.ack} />}
             </div>
-          )}
-          <TranslationView id={m.id} />
-          <ImageNoteView id={m.id} />
-          <ReplySuggestView id={m.id} onPick={onPickReply} />
-          <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
-            {m.editedAt != null &&
-              (m.edits.length > 0 ? (
-                <button
-                  onClick={() => setShowEdits((v) => !v)}
-                  title={showEdits ? "Hide earlier versions" : `Show ${m.edits.length} earlier version${m.edits.length > 1 ? "s" : ""}`}
-                  className="italic underline decoration-dotted hover:text-neutral-700 dark:hover:text-neutral-200"
-                >
-                  edited
-                </button>
-              ) : (
-                <span className="italic">edited</span>
-              ))}
-            {formatMessageTime(secs(m.timestamp))}
-            {mine && <AckIcon ack={m.ack} />}
           </div>
         </div>
         {reactions.length > 0 && (

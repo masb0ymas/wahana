@@ -561,6 +561,7 @@ export function Conversation({
             account={account}
             chatId={chatId}
             chatName={name}
+            chatPhone={group ? null : chat?.phone}
             messages={messages}
             autoOut={autoTranslate?.out}
             picked={draftPick}

@@ -14,6 +14,7 @@ import { applyMentions, memberLabel, type PickedMention } from "@/lib/mentions";
 import { nativeWa, type NativeAccount, type NativeGroupMember, type NativeMessage } from "@/lib/nativeWa";
 import { TranslateDraftButton, WriteAssistButton } from "@/components/DraftAssist";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
+import { TemplatePicker } from "@/components/TemplatePicker";
 import { MentionPicker } from "@/components/MentionPicker";
 import { NativeSmartReplies } from "@/screens/whatsapp/NativeAi";
 import { cacheSentMedia } from "@/screens/whatsapp/NativeMediaView";
@@ -27,6 +28,7 @@ export function Composer({
   account,
   chatId,
   chatName,
+  chatPhone,
   messages,
   autoOut,
   picked,
@@ -47,6 +49,8 @@ export function Composer({
   account: NativeAccount;
   chatId: string;
   chatName: string;
+  /** The other side's phone number, when known (a direct chat), for template variables. */
+  chatPhone?: string | null;
   messages: NativeMessage[];
   /** Language your messages are translated into before sending, if set for this chat. */
   autoOut: string | undefined;
@@ -97,6 +101,25 @@ export function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   const connected = account.status === "working";
   const group = chatId.endsWith("@g.us");
+  // Fills quick reply and template variables. A privacy-id (@lid) chat takes its number from
+  // the chat list; a group or channel has none.
+  const templateCtx = useMemo(() => {
+    const digits = (chatPhone ?? (chatId.endsWith("@s.whatsapp.net") ? chatId.split("@")[0] : ""))?.replace(/\D/g, "");
+    return { name: chatName, phone: digits ? `+${digits}` : "" };
+  }, [chatName, chatId, chatPhone]);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  /** Puts text at the caret, replacing any selection, and keeps the caret after it. */
+  const insertAtCaret = (t: string) => {
+    const ta = taRef.current;
+    const start = ta?.selectionStart ?? text.length;
+    const end = ta?.selectionEnd ?? text.length;
+    setText(text.slice(0, start) + t + text.slice(end));
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = start + t.length;
+    });
+  };
   // Shared key with the message bubbles, so group members are fetched once per chat.
   const { data: chatDetails } = useQuery({
     queryKey: ["native-chat-info", account.id, chatId],
@@ -284,12 +307,23 @@ export function Composer({
         <QuickReplyPicker
           account={nativeAccountKey(account.id)}
           query={slash}
-          ctx={{ name: chatName, phone: chatId.endsWith("@s.whatsapp.net") ? `+${chatId.split("@")[0]}` : "" }}
+          ctx={templateCtx}
           onClose={() => setSlash(null)}
           onPick={(t) => {
             setText(t);
             setSlash(null);
             requestAnimationFrame(() => taRef.current?.focus());
+          }}
+        />
+      )}
+      {templateOpen && (
+        <TemplatePicker
+          account={nativeAccountKey(account.id)}
+          ctx={templateCtx}
+          onClose={() => setTemplateOpen(false)}
+          onPick={(t) => {
+            setTemplateOpen(false);
+            insertAtCaret(t);
           }}
         />
       )}
@@ -358,9 +392,10 @@ export function Composer({
           />
           <AttachMenu
             disabled={!connected || !!editing}
-            kinds={canPoll ? ["image", "file", "poll"] : ["image", "file"]}
+            kinds={canPoll ? ["image", "file", "poll", "template"] : ["image", "file", "template"]}
             onPick={(k) => {
               if (k === "poll") return setPollOpen(true);
+              if (k === "template") return setTemplateOpen(true);
               const input = fileRef.current;
               if (!input) return;
               input.accept = k === "image" ? "image/*,video/*" : "";
@@ -379,19 +414,7 @@ export function Composer({
           <TranslateDraftButton text={text} onResult={setText} />
           <WriteAssistButton text={text} account={nativeAccountKey(account.id)} onResult={setText} />
           <StickerButton onPick={sendSticker} disabled={!connected || !!editing || sending} />
-          <EmojiButton
-            onPick={(emoji) => {
-              const ta = taRef.current;
-              const start = ta?.selectionStart ?? text.length;
-              const end = ta?.selectionEnd ?? text.length;
-              setText(text.slice(0, start) + emoji + text.slice(end));
-              requestAnimationFrame(() => {
-                if (!ta) return;
-                ta.focus();
-                ta.selectionStart = ta.selectionEnd = start + emoji.length;
-              });
-            }}
-          />
+          <EmojiButton onPick={insertAtCaret} />
         </div>
         <div className="flex items-end gap-1 min-w-0 flex-1">
           <textarea

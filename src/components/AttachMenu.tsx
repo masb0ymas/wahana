@@ -1,9 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, Image as ImageIcon, FileText, Mic, MapPin, Contact, BarChart3, X, Loader2, Square, Plus, Trash2 } from "lucide-react";
+import {
+  Paperclip,
+  Image as ImageIcon,
+  FileText,
+  Mic,
+  MapPin,
+  Contact,
+  BarChart3,
+  MessageSquareText,
+  X,
+  Loader2,
+  Square,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { Button, Input, Label, MenuItem, Popover } from "@/components/ui";
 import { cn, errMsg } from "@/lib/utils";
 
-export type AttachKind = "image" | "file" | "voice" | "location" | "contact" | "poll";
+export type AttachKind = "image" | "file" | "voice" | "location" | "contact" | "poll" | "template";
 
 /** "+" popover listing what can be attached; `kinds` limits it to what the chat can send. */
 export function AttachMenu({ disabled, kinds, onPick }: { disabled?: boolean; kinds?: AttachKind[]; onPick: (k: AttachKind) => void }) {
@@ -16,6 +30,7 @@ export function AttachMenu({ disabled, kinds, onPick }: { disabled?: boolean; ki
     { k: "location", icon: MapPin, label: "Location" },
     { k: "contact", icon: Contact, label: "Contact" },
     { k: "poll", icon: BarChart3, label: "Poll" },
+    { k: "template", icon: MessageSquareText, label: "Template" },
   ];
   const items = kinds ? all.filter((it) => kinds.includes(it.k)) : all;
 

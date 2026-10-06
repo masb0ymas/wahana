@@ -13,6 +13,7 @@ import { upsertRule, type AutoReplyRule } from "@/store/autoReply";
 import { addSticker, listStickers } from "@/lib/stickers";
 import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
 import type { QuickReply } from "@/store/quickReplies";
+import type { Template } from "@/store/templates";
 import type { Schedule } from "@/store/scheduler";
 
 export interface Backup {
@@ -34,6 +35,8 @@ export interface Backup {
   /** Since backup version 4. Messages pinned for everyone, keyed `session:chatId:bareId` → expiry (unix ms). */
   messagePins?: Record<string, number>;
   quickReplies: QuickReply[];
+  /** Absent in backups made before templates existed. */
+  templates?: Template[];
   schedules: Omit<Schedule, "media_b64">[];
   /** Since backup version 2. */
   autoReplyRules?: AutoReplyRule[];
@@ -153,6 +156,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
     // Read from the live store so a pin made moments ago (still inside its write debounce) is included.
     messagePins: usePins.getState().items,
     quickReplies: await d.select<QuickReply[]>("SELECT * FROM quick_replies"),
+    templates: await d.select<Template[]>("SELECT * FROM templates"),
     schedules: await d.select<Omit<Schedule, "media_b64">[]>(
       "SELECT id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs FROM schedules",
     ),
@@ -257,6 +261,12 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
       await d.execute(
         "INSERT INTO quick_replies (id, account, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET account=excluded.account, shortcut=excluded.shortcut, text=excluded.text",
         [r.id, r.account ?? null, r.shortcut, r.text, r.created_at],
+      );
+    }
+    for (const t of b.templates ?? []) {
+      await d.execute(
+        "INSERT INTO templates (id, account, name, text, uses, last_used, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET account=excluded.account, name=excluded.name, text=excluded.text",
+        [t.id, t.account, t.name, t.text, t.uses ?? 0, t.last_used ?? null, t.created_at],
       );
     }
   }

@@ -96,6 +96,18 @@ pub fn run() {
                             sql: include_str!("../migrations/010_broadcast_media.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 11,
+                            description: "quick reply usage",
+                            sql: include_str!("../migrations/011_quick_replies_usage.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 12,
+                            description: "message templates",
+                            sql: include_str!("../migrations/012_templates.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

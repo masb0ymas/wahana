@@ -290,6 +290,8 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
           sc.anchor ?? null,
         ],
       );
+      // Attachments are not exported: drop any left over from the live schedule for this id.
+      await d.execute("DELETE FROM schedule_media WHERE schedule_id = $1", [sc.id]);
     }
   }
   if (opts.autoReplies && b.autoReplyRules) {

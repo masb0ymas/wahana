@@ -23,6 +23,8 @@ const COMMANDS: &[&str] = &[
     "wa_native_remove",
     "wa_native_send_text",
     "wa_native_react",
+    "wa_native_send_poll",
+    "wa_native_poll_vote",
     "wa_native_edit",
     "wa_native_delete",
     "wa_native_delete_local",

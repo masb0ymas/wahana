@@ -28,6 +28,8 @@
     "allow-wa-native-remove",
     "allow-wa-native-send-text",
     "allow-wa-native-react",
+    "allow-wa-native-send-poll",
+    "allow-wa-native-poll-vote",
     "allow-wa-native-edit",
     "allow-wa-native-delete",
     "allow-wa-native-delete-local",

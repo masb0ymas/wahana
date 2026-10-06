@@ -82,6 +82,7 @@ import { useNativeTyping } from "@/screens/whatsapp/useNativeTyping";
 import { TypingBubble } from "@/components/TypingBubble";
 import { NativeMediaView, cacheSentMedia, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
 import { ContactCard, LocationCard, PollCard } from "@/screens/whatsapp/NativeInteractive";
+import { AttachMenu, PollDialog } from "@/components/AttachMenu";
 import { readReceiptsFor, sendTypingFor, useReadReceipts, useSettings } from "@/store/settings";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { useDrafts } from "@/store/drafts";
@@ -2039,7 +2040,14 @@ const Bubble = memo(function Bubble({
                 <NativeMediaView accountId={accountId} message={m} connected={connected} />
               </div>
             ) : m.kind === "poll" && m.interactive?.poll ? (
-              <PollCard data={m.interactive.poll} />
+              <PollCard
+                data={m.interactive.poll}
+                onVote={
+                  connected && m.interactive.poll.results?.canVote && !revoked
+                    ? (options) => nativeWa.pollVote(accountId, m.chatId, m.id, options)
+                    : undefined
+                }
+              />
             ) : m.kind === "location" && m.interactive?.location ? (
               <LocationCard data={m.interactive.location} />
             ) : m.kind === "contact" && m.interactive?.contacts ? (
@@ -2391,6 +2399,9 @@ function Composer({
     [draftKey],
   );
   const [sending, setSending] = useState(false);
+  const [pollOpen, setPollOpen] = useState(false);
+  // Polls go to people and groups; channels and stories take none.
+  const canPoll = !chatId.endsWith("@newsletter") && chatId !== "status@broadcast";
   const [slash, setSlash] = useState<string | null>(null); // "/query" at the start of the composer
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null); // "@query" before the caret
   const pickedMentions = useRef<PickedMention[]>([]);
@@ -2657,15 +2668,26 @@ function Composer({
               e.target.value = "";
             }}
           />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => fileRef.current?.click()}
+          <AttachMenu
             disabled={!connected || !!editing}
-            title="Attach a file"
-          >
-            <Paperclip size={18} />
-          </Button>
+            kinds={canPoll ? ["image", "file", "poll"] : ["image", "file"]}
+            onPick={(k) => {
+              if (k === "poll") return setPollOpen(true);
+              const input = fileRef.current;
+              if (!input) return;
+              input.accept = k === "image" ? "image/*,video/*" : "";
+              input.click();
+            }}
+          />
+          {pollOpen && (
+            <PollDialog
+              onClose={() => setPollOpen(false)}
+              onSend={async (question, options, multiple) => {
+                await nativeWa.sendPoll(account.id, chatId, question, options, multiple);
+                onSent();
+              }}
+            />
+          )}
           <TranslateDraftButton text={text} onResult={setText} />
           <WriteAssistButton text={text} account={nativeAccountKey(account.id)} onResult={setText} />
           <StickerButton onPick={sendSticker} disabled={!connected || !!editing || sending} />

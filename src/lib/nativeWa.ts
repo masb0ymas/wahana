@@ -58,7 +58,7 @@ export interface NativeMedia {
 /** The structured content of a poll, location or contact message; only the part matching
  * the message's `kind` is set. */
 export interface NativeInteractive {
-  poll?: { question: string; options: string[]; multiple: boolean };
+  poll?: { question: string; options: string[]; multiple: boolean; results?: NativePollResults };
   location?: {
     latitude: number;
     longitude: number;
@@ -67,6 +67,16 @@ export interface NativeInteractive {
     live: boolean;
   };
   contacts?: { name: string; phone: string | null }[];
+}
+
+/** The votes on a poll so far. */
+export interface NativePollResults {
+  /** Who picked each option (display names), in the poll's option order; your own choice is in `mine`. */
+  voters: string[][];
+  /** The options you picked. */
+  mine: string[];
+  /** The poll's key is stored, so it can be voted on here (polls stored before keys were kept can't). */
+  canVote: boolean;
 }
 
 export interface NativeMessage {
@@ -320,6 +330,12 @@ export const nativeWa = {
   /** React to a message; an empty `emoji` removes your reaction. */
   react: (id: string, chatId: string, messageId: string, emoji: string) =>
     invoke<void>("wa_native_react", { id, chatId, messageId, emoji }),
+  /** Send a poll; `multiple` lets voters pick any number of options. */
+  sendPoll: (id: string, chatId: string, question: string, options: string[], multiple: boolean) =>
+    invoke<void>("wa_native_send_poll", { id, chatId, question, options, multiple }),
+  /** Vote on a poll, replacing an earlier vote; an empty `options` withdraws it. */
+  pollVote: (id: string, chatId: string, messageId: string, options: string[]) =>
+    invoke<void>("wa_native_poll_vote", { id, chatId, messageId, options }),
   /** Edit one of your own messages. */
   edit: (id: string, chatId: string, messageId: string, text: string) => invoke<void>("wa_native_edit", { id, chatId, messageId, text }),
   /** Remove a message from this device only. */

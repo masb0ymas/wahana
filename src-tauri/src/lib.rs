@@ -122,6 +122,8 @@ pub fn run() {
             whatsapp::wa_native_remove,
             whatsapp::wa_native_send_text,
             whatsapp::wa_native_react,
+            whatsapp::wa_native_send_poll,
+            whatsapp::wa_native_poll_vote,
             whatsapp::wa_native_edit,
             whatsapp::wa_native_delete,
             whatsapp::wa_native_delete_local,

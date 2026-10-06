@@ -13,11 +13,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::whatsapp::{
     ChannelReaction, ChatInfo, EditView, Interactive, MediaInfo, MessageKind, MessageView,
-    PreviewInfo, ReplyView,
+    PollResults, PreviewInfo, ReplyView,
 };
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 17;
+const SCHEMA_VERSION: i64 = 18;
 const STATUS_CHAT: &str = "status@broadcast";
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
@@ -71,6 +71,27 @@ pub struct IncomingMessage {
     pub media: Option<StoredMedia>,
     pub quote: Option<QuoteRef>,
     pub album: Option<String>,
+    /// The key of a poll this message creates, when it carries one.
+    pub poll_key: Option<PollKey>,
+}
+
+/// What it takes to vote on a poll and to open the votes cast on it: the secret its creation
+/// message carried and, when the message said, the creator's id in the namespace (phone
+/// number or privacy id) the chat used for it.
+pub struct PollKey {
+    pub secret: Vec<u8>,
+    pub creator: Option<String>,
+}
+
+/// A stored poll, as voting and opening votes need it.
+pub struct PollTarget {
+    /// The chat the poll is stored under.
+    pub chat_id: String,
+    pub from_me: bool,
+    pub sender_id: String,
+    pub secret: Option<Vec<u8>>,
+    pub creator: Option<String>,
+    pub options: Vec<String>,
 }
 
 /// The message a reply quotes. `sender` and `text` are what the reply itself carried, used
@@ -325,6 +346,23 @@ impl ChatDb {
                 "CREATE TABLE IF NOT EXISTS pins (id TEXT PRIMARY KEY, pinned_at INTEGER NOT NULL);",
             )?;
         }
+        if version < 18 {
+            // A poll's key (`poll_secret`, from the creation message) and who created it, both
+            // needed to vote on it and to open the votes others cast. Votes are stored opened:
+            // the latest choice per voter, as option names (JSON), with `me` for our own.
+            migrate(
+                &conn,
+                "ALTER TABLE messages ADD COLUMN poll_secret BLOB;
+                 ALTER TABLE messages ADD COLUMN poll_creator TEXT;
+                 CREATE TABLE IF NOT EXISTS poll_votes (
+                     poll_id TEXT NOT NULL,
+                     voter TEXT NOT NULL,
+                     options TEXT NOT NULL,
+                     at INTEGER NOT NULL,
+                     PRIMARY KEY (poll_id, voter)
+                 );",
+            )?;
+        }
         // Never stamp a lower version: an older build sharing this file (a previous release,
         // a dev build) would otherwise make the next newer one re-run migrations it already
         // applied.
@@ -407,7 +445,7 @@ impl ChatDb {
     /// Forgets everything, for a device that was logged out and will pair afresh.
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute_batch(
-            "DELETE FROM chats; DELETE FROM messages; DELETE FROM message_edits; DELETE FROM names; DELETE FROM lid_pn; DELETE FROM mutes; DELETE FROM pins;",
+            "DELETE FROM chats; DELETE FROM messages; DELETE FROM message_edits; DELETE FROM names; DELETE FROM lid_pn; DELETE FROM mutes; DELETE FROM pins; DELETE FROM poll_votes;",
         )
     }
 
@@ -552,8 +590,8 @@ impl ChatDb {
                  media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto, ack,
                  quote_id, quote_sender, quote_text, album_id,
                  preview_url, preview_title, preview_description, preview_image, quote_chat,
-                 status_mention_id, interactive)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
+                 status_mention_id, interactive, poll_secret, poll_creator)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)",
             params![
                 v.chat_id,
                 v.id,
@@ -586,6 +624,8 @@ impl ChatDb {
                 v.interactive
                     .as_ref()
                     .and_then(|i| serde_json::to_string(i).ok()),
+                msg.poll_key.as_ref().map(|k| k.secret.as_slice()),
+                msg.poll_key.as_ref().and_then(|k| k.creator.as_deref()),
             ],
         )? > 0;
         if !inserted {
@@ -631,6 +671,14 @@ impl ChatDb {
                         p.description.as_deref(),
                         p.image.as_deref(),
                     ],
+                )?;
+            }
+            // And a poll's key, for polls stored before keys were kept.
+            if let Some(k) = &msg.poll_key {
+                self.conn.execute(
+                    "UPDATE messages SET poll_secret = ?3, poll_creator = ?4
+                     WHERE chat_id = ?1 AND id = ?2 AND poll_secret IS NULL",
+                    params![v.chat_id, v.id, k.secret, k.creator],
                 )?;
             }
             // And the story a mention points at, for mentions stored before it was kept.
@@ -771,6 +819,7 @@ impl ChatDb {
     /// Removes a chat with its messages, edit history and label links from this device.
     pub fn delete_chat(&self, chat_id: &str) -> rusqlite::Result<()> {
         for sql in [
+            "DELETE FROM poll_votes WHERE poll_id IN (SELECT id FROM messages WHERE chat_id = ?1 AND kind = 'poll')",
             "DELETE FROM messages WHERE chat_id = ?1",
             "DELETE FROM message_edits WHERE chat_id = ?1",
             "DELETE FROM chat_labels WHERE chat_id = ?1",
@@ -1200,7 +1249,7 @@ impl ChatDb {
                         media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack,
                         revoked_at, edited_at, quote_id, quote_sender, quote_text, album_id,
                         preview_url, preview_title, preview_description, preview_image, quote_chat,
-                        status_mention_id, interactive
+                        status_mention_id, interactive, poll_secret IS NOT NULL
                  FROM messages
                  WHERE chat_id = ?1 {filter}
                  ORDER BY timestamp DESC
@@ -1248,6 +1297,7 @@ impl ChatDb {
                 r.get::<_, String>(3)?,
                 quote,
                 r.get::<_, Option<String>>(22)?,
+                r.get::<_, bool>(30)?,
                 MessageView {
                     id: r.get(0)?,
                     chat_id: r.get(1)?,
@@ -1283,8 +1333,11 @@ impl ChatDb {
             HashMap::new()
         };
         for row in rows {
-            let (sender_id, quote, album_id, mut view) = row?;
+            let (sender_id, quote, album_id, has_poll_key, mut view) = row?;
             view.album_id = album_id;
+            if let Some(poll) = view.interactive.as_mut().and_then(|i| i.poll.as_mut()) {
+                poll.results = Some(self.poll_results(&view.id, &poll.options, has_poll_key)?);
+            }
             view.reply_to = quote.map(|q| self.reply_view(chat_id, q)).transpose()?;
             if let Some(reactions) = channel_reactions.remove(&view.id) {
                 view.channel_reactions = reactions;
@@ -1456,6 +1509,102 @@ impl ChatDb {
             map.entry(id).or_default().push(reaction);
         }
         Ok(map)
+    }
+
+    /// A stored poll, found under the chat it names or, failing that (a vote may name the chat
+    /// by the other id), by its id alone.
+    pub fn poll_target(&self, chat_id: &str, id: &str) -> rusqlite::Result<Option<PollTarget>> {
+        let Some((chat_id, _)) = self.locate(chat_id, id)? else {
+            return Ok(None);
+        };
+        self.conn
+            .query_row(
+                "SELECT from_me, sender_id, poll_secret, poll_creator, interactive
+                 FROM messages WHERE chat_id = ?1 AND id = ?2 AND kind = 'poll'",
+                params![chat_id, id],
+                |r| {
+                    let options = r
+                        .get::<_, Option<String>>(4)?
+                        .and_then(|s| serde_json::from_str::<Interactive>(&s).ok())
+                        .and_then(|i| i.poll)
+                        .map(|p| p.options)
+                        .unwrap_or_default();
+                    Ok(PollTarget {
+                        chat_id: chat_id.clone(),
+                        from_me: r.get(0)?,
+                        sender_id: r.get(1)?,
+                        secret: r.get(2)?,
+                        creator: r.get(3)?,
+                        options,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    /// Records someone's choice on a poll (`me` for our own), replacing an earlier one unless
+    /// it is newer than this. An empty choice is a withdrawn vote. A voter is kept under their
+    /// privacy id when it is known, so a vote cast under either id replaces the other.
+    /// Returns whether anything changed.
+    pub fn set_poll_vote(
+        &self,
+        poll_id: &str,
+        voter: &str,
+        options: &[String],
+        at: i64,
+    ) -> rusqlite::Result<bool> {
+        let voter = match voter {
+            "me" => voter.to_string(),
+            _ => self.lid_for(voter)?.unwrap_or_else(|| voter.to_string()),
+        };
+        let options = serde_json::to_string(options).unwrap_or_else(|_| "[]".into());
+        let changed = self.conn.execute(
+            "INSERT INTO poll_votes (poll_id, voter, options, at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (poll_id, voter) DO UPDATE SET options = excluded.options, at = excluded.at
+             WHERE excluded.at >= poll_votes.at",
+            params![poll_id, voter, options, at],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Who picked what on a poll, by option in the poll's order.
+    fn poll_results(
+        &self,
+        poll_id: &str,
+        options: &[String],
+        can_vote: bool,
+    ) -> rusqlite::Result<PollResults> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT voter, options FROM poll_votes WHERE poll_id = ?1 ORDER BY at")?;
+        let rows = stmt.query_map(params![poll_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut results = PollResults {
+            voters: vec![Vec::new(); options.len()],
+            mine: Vec::new(),
+            can_vote,
+        };
+        for row in rows {
+            let (voter, picked) = row?;
+            let picked: Vec<String> = serde_json::from_str(&picked).unwrap_or_default();
+            if voter == "me" {
+                results.mine = picked;
+                continue;
+            }
+            let name = {
+                let Resolved { name, phone } = self.resolve(&voter)?;
+                name.map(|(n, _)| n)
+                    .or(phone)
+                    .unwrap_or_else(|| fallback_name(&voter))
+            };
+            for option in &picked {
+                if let Some(i) = options.iter().position(|o| o == option) {
+                    results.voters[i].push(name.clone());
+                }
+            }
+        }
+        Ok(results)
     }
 
     /// What a message action needs about one stored message.
@@ -1816,6 +1965,7 @@ mod tests {
             media: None,
             quote: None,
             album: None,
+            poll_key: None,
         };
         db.insert_message(&message, false).unwrap();
         let messages = db.messages("g@g.us", 10).unwrap();
@@ -1854,6 +2004,7 @@ mod tests {
                         question: "Lunch?".to_string(),
                         options: vec!["Yes".to_string(), "No".to_string()],
                         multiple: false,
+                        results: None,
                     }),
                     ..Default::default()
                 }),
@@ -1862,6 +2013,10 @@ mod tests {
             media: None,
             quote: None,
             album: None,
+            poll_key: Some(PollKey {
+                secret: vec![7; 32],
+                creator: Some("a@lid".to_string()),
+            }),
         };
         db.insert_message(&message, false).unwrap();
         let messages = db.messages("g@g.us", 10).unwrap();
@@ -1875,6 +2030,43 @@ mod tests {
             poll.map(|p| p.options.clone()),
             Some(vec!["Yes".to_string(), "No".to_string()])
         );
+        assert!(poll
+            .and_then(|p| p.results.as_ref())
+            .is_some_and(|r| r.can_vote));
+        let target = db.poll_target("other@g.us", "p1").unwrap().unwrap();
+        assert_eq!(target.chat_id, "g@g.us");
+        assert_eq!(target.secret.as_deref(), Some(&[7u8; 32][..]));
+        assert_eq!(target.creator.as_deref(), Some("a@lid"));
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn poll_votes_keep_the_latest_choice_per_voter() {
+        let (db, path) = temp_db("poll_votes");
+        db.set_lid_pn("b@lid", "1@s.whatsapp.net").unwrap();
+        db.set_name("b@lid", "Budi", NameSource::Contact).unwrap();
+        let options = vec!["Yes".to_string(), "No".to_string()];
+        let yes = vec!["Yes".to_string()];
+        let no = vec!["No".to_string()];
+        // Voted under the phone number, then changed their mind under the privacy id.
+        assert!(db
+            .set_poll_vote("p1", "1@s.whatsapp.net", &yes, 10)
+            .unwrap());
+        assert!(db.set_poll_vote("p1", "b@lid", &no, 20).unwrap());
+        // A late copy of the older vote does not undo the newer one.
+        assert!(!db.set_poll_vote("p1", "b@lid", &yes, 15).unwrap());
+        db.set_poll_vote("p1", "me", &yes, 30).unwrap();
+        let results = db.poll_results("p1", &options, true).unwrap();
+        assert_eq!(
+            results.voters,
+            vec![Vec::<String>::new(), vec!["Budi".to_string()]]
+        );
+        assert_eq!(results.mine, yes);
+        // Withdrawing a vote leaves it out of the tally.
+        db.set_poll_vote("p1", "b@lid", &[], 40).unwrap();
+        let results = db.poll_results("p1", &options, true).unwrap();
+        assert!(results.voters.iter().all(Vec::is_empty));
         drop(db);
         let _ = std::fs::remove_file(&path);
     }

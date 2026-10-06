@@ -1835,7 +1835,7 @@ const Bubble = memo(function Bubble({
           }}
           title="Right-click for more"
           className={cn(
-            "relative rounded-lg px-3 pt-2 pb-1.5 text-sm selectable",
+            "relative max-w-full rounded-lg px-3 pt-2 pb-1.5 text-sm selectable",
             hasTail && (mine ? "rounded-br-none" : "rounded-bl-none"),
             revoked
               ? cn(

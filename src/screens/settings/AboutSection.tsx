@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { openWelcome } from "@/screens/WelcomeScreen";
 import { useWhatsApp } from "@/store/whatsapp";
 import { useUpdaterStore } from "@/store/updater";
+import { UnofficialNotice } from "@/components/UnofficialNotice";
 
 const REPO = "https://github.com/ashafizullah/wahana";
 const LINKS = [
@@ -70,10 +71,7 @@ export function AboutSection() {
           {progress !== null && ` Downloading… ${Math.round(progress * 100)}%`}
         </p>
       )}
-      <p className="text-xs text-neutral-500">
-        Unofficial client, not affiliated with WhatsApp or Meta. Unofficial clients may break WhatsApp's Terms of Service and can get your
-        number banned; use at your own risk.
-      </p>
+      <UnofficialNotice />
       <Button variant="secondary" size="sm" onClick={openWelcome}>
         Show welcome screen
       </Button>

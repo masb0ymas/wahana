@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { cn } from "@/lib/utils";
 
 /**
  * Renders WhatsApp text formatting to React nodes:
@@ -8,19 +9,21 @@ import { openUrl } from "@tauri-apps/plugin-opener";
  */
 /** Resolves a mention id (digits, `@lid` or `@c.us`) to a display name; return undefined to leave as-is. */
 export type MentionResolver = (id: string | null | undefined) => string | undefined;
+/** How to open the chat with a mentioned person, or undefined when they cannot be opened (yourself, a stranger). */
+export type MentionOpener = (id: string) => (() => void) | undefined;
 
-export function WaMarkdown({ text, mentions }: { text: string; mentions?: MentionResolver }) {
-  return <>{renderBlocks(text, mentions)}</>;
+export function WaMarkdown({ text, mentions, onMention }: { text: string; mentions?: MentionResolver; onMention?: MentionOpener }) {
+  return <>{renderBlocks(text, mentions, onMention)}</>;
 }
 
 const CODE_BLOCK = /```([\s\S]*?)```/g;
 
-function renderBlocks(text: string, mentions?: MentionResolver): ReactNode[] {
+function renderBlocks(text: string, mentions?: MentionResolver, onMention?: MentionOpener): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let key = 0;
   for (const m of text.matchAll(CODE_BLOCK)) {
-    if (m.index! > last) out.push(...renderLines(text.slice(last, m.index), key++, mentions));
+    if (m.index! > last) out.push(...renderLines(text.slice(last, m.index), key++, mentions, onMention));
     out.push(
       <pre
         key={`c${key++}`}
@@ -31,7 +34,7 @@ function renderBlocks(text: string, mentions?: MentionResolver): ReactNode[] {
     );
     last = m.index! + m[0].length;
   }
-  if (last < text.length) out.push(...renderLines(text.slice(last), key, mentions));
+  if (last < text.length) out.push(...renderLines(text.slice(last), key, mentions, onMention));
   return out;
 }
 
@@ -45,7 +48,7 @@ function classify(line: string): Line {
   return { t: "p", s: line };
 }
 
-function renderLines(text: string, seed: number, mentions?: MentionResolver): ReactNode[] {
+function renderLines(text: string, seed: number, mentions?: MentionResolver, onMention?: MentionOpener): ReactNode[] {
   const lines = text.split("\n").map(classify);
   const out: ReactNode[] = [];
   let i = 0;
@@ -61,13 +64,13 @@ function renderLines(text: string, seed: number, mentions?: MentionResolver): Re
         type === "ul" ? (
           <ul key={key()} className="my-0.5 list-disc pl-5">
             {items.map((l) => (
-              <li key={key()}>{renderInline(l.s, 0, mentions)}</li>
+              <li key={key()}>{renderInline(l.s, 0, mentions, onMention)}</li>
             ))}
           </ul>
         ) : (
           <ol key={key()} className="my-0.5 list-decimal pl-5" start={Number((items[0] as { n: string }).n) || 1}>
             {items.map((l) => (
-              <li key={key()}>{renderInline(l.s, 0, mentions)}</li>
+              <li key={key()}>{renderInline(l.s, 0, mentions, onMention)}</li>
             ))}
           </ol>
         ),
@@ -81,7 +84,7 @@ function renderLines(text: string, seed: number, mentions?: MentionResolver): Re
         <blockquote key={key()} className="my-0.5 border-l-2 border-neutral-400/60 pl-2 opacity-80">
           {qs.map((s, j) => (
             <span key={j}>
-              {renderInline(s, 0, mentions)}
+              {renderInline(s, 0, mentions, onMention)}
               {j < qs.length - 1 && <br />}
             </span>
           ))}
@@ -90,7 +93,7 @@ function renderLines(text: string, seed: number, mentions?: MentionResolver): Re
       continue;
     }
     // Paragraph line: keep as text + <br> so whitespace-pre-wrap layout stays natural.
-    out.push(<span key={key()}>{renderInline(cur.s, 0, mentions)}</span>);
+    out.push(<span key={key()}>{renderInline(cur.s, 0, mentions, onMention)}</span>);
     if (i < lines.length - 1) out.push(<br key={key()} />);
     i++;
   }
@@ -109,7 +112,7 @@ const INLINE = new RegExp(
   "g",
 );
 
-export function renderInline(text: string, depth = 0, mentions?: MentionResolver): ReactNode[] {
+export function renderInline(text: string, depth = 0, mentions?: MentionResolver, onMention?: MentionOpener): ReactNode[] {
   if (depth > 3) return [text];
   const out: ReactNode[] = [];
   let last = 0;
@@ -123,14 +126,28 @@ export function renderInline(text: string, depth = 0, mentions?: MentionResolver
           {code.slice(1, -1)}
         </code>,
       );
-    else if (bold) out.push(<strong key={k++}>{renderInline(bold.slice(1, -1), depth + 1, mentions)}</strong>);
-    else if (italic) out.push(<em key={k++}>{renderInline(italic.slice(1, -1), depth + 1, mentions)}</em>);
-    else if (strike) out.push(<s key={k++}>{renderInline(strike.slice(1, -1), depth + 1, mentions)}</s>);
+    else if (bold) out.push(<strong key={k++}>{renderInline(bold.slice(1, -1), depth + 1, mentions, onMention)}</strong>);
+    else if (italic) out.push(<em key={k++}>{renderInline(italic.slice(1, -1), depth + 1, mentions, onMention)}</em>);
+    else if (strike) out.push(<s key={k++}>{renderInline(strike.slice(1, -1), depth + 1, mentions, onMention)}</s>);
     else if (mention) {
-      const name = mentions?.(mention.slice(1));
+      const id = mention.slice(1);
+      const name = mentions?.(id);
+      const open = onMention?.(id);
       out.push(
-        <span key={k++} className="text-sky-600 dark:text-sky-400 font-medium" title={mention}>
-          @{name ?? mention.slice(1)}
+        <span
+          key={k++}
+          className={cn("text-sky-600 dark:text-sky-400 font-medium", open && "cursor-pointer hover:underline")}
+          title={open ? `Message ${name ?? id}` : mention}
+          onClick={
+            open
+              ? (e) => {
+                  e.stopPropagation();
+                  open();
+                }
+              : undefined
+          }
+        >
+          @{name ?? id}
         </span>,
       );
     } else if (url) {

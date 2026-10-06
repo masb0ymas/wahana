@@ -5,7 +5,7 @@ import { Pin } from "lucide-react";
 import { Avatar } from "@/components/ui";
 import { cn, convKey, formatMessageTime } from "@/lib/utils";
 import { WaMarkdown } from "@/lib/waMarkdown";
-import { mentionResolver } from "@/lib/mentions";
+import { mentionChatIds, mentionResolver } from "@/lib/mentions";
 import { nativeWa, type NativeMessage, type NativeReply } from "@/lib/nativeWa";
 import { LinkPreviewCard } from "@/components/LinkPreview";
 import { AckIcon, ImageNoteView, ReplySuggestView, TranslationView } from "@/components/MessageExtras";
@@ -61,6 +61,7 @@ export const Bubble = memo(function Bubble({
   onJumpTo,
   onProfile,
   onOpenNumber,
+  onOpenChat,
 }: {
   accountId: string;
   connected: boolean;
@@ -84,6 +85,8 @@ export const Bubble = memo(function Bubble({
   onProfile: (chatId: string) => void;
   /** Open (or start) the chat with a phone number, e.g. from a shared contact. */
   onOpenNumber: (phone: string) => void;
+  /** Open (or start) the chat with someone, given their ids (privacy id and phone). */
+  onOpenChat: (ids: string[]) => void;
 }) {
   const mine = m.fromMe;
   const sticker = m.media?.kind === "sticker";
@@ -102,6 +105,10 @@ export const Bubble = memo(function Bubble({
     staleTime: 5 * 60_000,
   });
   const mentionFor = useMemo(() => mentionResolver(groupInfo, me?.id), [groupInfo, me?.id]);
+  const openMention = (digits: string) => {
+    const ids = mentionChatIds(groupInfo, digits, me?.id);
+    return ids ? () => onOpenChat(ids) : undefined;
+  };
   // Deleted for everyone: the stored copy keeps what it said; older tombstones only know that it went.
   const revoked = m.revokedAt != null || (!!tomb && (tomb.kind ?? "revoked") === "revoked");
   // Stickers float without a bubble and a deleted message is a dashed outline: neither takes a tail.
@@ -270,7 +277,7 @@ export const Bubble = memo(function Bubble({
             {album?.slice(1).map((a) =>
               a.body ? (
                 <div key={a.id} className="break-words">
-                  <WaMarkdown text={a.body} mentions={group ? mentionFor : undefined} />
+                  <WaMarkdown text={a.body} mentions={group ? mentionFor : undefined} onMention={group ? openMention : undefined} />
                 </div>
               ) : null,
             )}
@@ -278,7 +285,7 @@ export const Bubble = memo(function Bubble({
             {m.body && !m.statusMention && !m.interactive && (
               <div className={cn("break-words", revoked && "line-through decoration-neutral-400")}>
                 <div className={cn(!bodyOpen && longBody && "line-clamp-6")}>
-                  <WaMarkdown text={m.body} mentions={group ? mentionFor : undefined} />
+                  <WaMarkdown text={m.body} mentions={group ? mentionFor : undefined} onMention={group ? openMention : undefined} />
                 </div>
                 {longBody && (
                   <button

@@ -541,6 +541,7 @@ export function Conversation({
                     }}
                     onProfile={setProfileId}
                     onOpenNumber={(phone) => onOpenChat([`${phone.replace(/\D/g, "")}@s.whatsapp.net`])}
+                    onOpenChat={(ids) => onOpenChat(ids)}
                   />
                 </ErrorBoundary>
               </div>

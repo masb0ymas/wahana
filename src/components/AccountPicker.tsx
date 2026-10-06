@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pencil } from "lucide-react";
 import { useWhatsApp } from "@/store/whatsapp";
+import { MAX_ACCOUNTS } from "@/lib/account";
 import { resolveStyle, useAccountStyle } from "@/store/accountStyle";
 
 const NEW = "\u0000new";
@@ -74,7 +75,7 @@ export function AccountPicker() {
             </option>
           );
         })}
-        <option value={NEW}>＋ Link a WhatsApp account…</option>
+        {accounts.length < MAX_ACCOUNTS && <option value={NEW}>＋ Link a WhatsApp account…</option>}
       </select>
       {current && (
         <button

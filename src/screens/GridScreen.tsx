@@ -5,6 +5,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui";
 import { useSettings } from "@/store/settings";
 import { useWhatsApp } from "@/store/whatsapp";
+import { MAX_ACCOUNTS } from "@/lib/account";
 import type { NativeAccount } from "@/lib/nativeWa";
 
 const GAP = 12;
@@ -46,7 +47,13 @@ export function GridScreen() {
         <div className="ml-auto flex items-center gap-4">
           <Stepper label="Columns" value={columns} max={MAX_COLS} onChange={(v) => void useSettings.getState().save({ gridColumns: v })} />
           <Stepper label="Rows" value={rows} max={MAX_ROWS} onChange={(v) => void useSettings.getState().save({ gridRows: v })} />
-          <Button size="sm" variant="secondary" onClick={() => void add().catch(console.error)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={accounts.length >= MAX_ACCOUNTS}
+            title={accounts.length >= MAX_ACCOUNTS ? `At most ${MAX_ACCOUNTS} accounts can be linked.` : undefined}
+            onClick={() => void add().catch(console.error)}
+          >
             <Plus size={14} /> Link account
           </Button>
         </div>

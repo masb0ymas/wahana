@@ -3,6 +3,7 @@ import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { load } from "@tauri-apps/plugin-store";
 import { getVersion } from "@tauri-apps/api/app";
 import { nativeWa } from "@/lib/nativeWa";
+import { MAX_ACCOUNTS } from "@/lib/account";
 import { useSettings, type Prefs } from "@/store/settings";
 import { getSecret, setSecret } from "@/lib/secrets";
 import { db } from "@/store/scheduler";
@@ -75,11 +76,11 @@ function channelMuteKeys(): string[] {
   }
 }
 
-/** Outcome of re-creating one native account: added (needs a QR scan) or already here. */
+/** Outcome of re-creating one native account: added (needs a QR scan), already here, or over the limit. */
 export interface NativeRestore {
   id: string;
   name: string;
-  outcome: "added" | "exists";
+  outcome: "added" | "exists" | "skipped";
 }
 
 const BACKUP_VERSION = 4;
@@ -215,10 +216,13 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
   const native: NativeRestore[] = [];
   if (opts.nativeAccounts && b.nativeAccounts?.length) {
     const here = new Set((await nativeWa.accounts()).map((a) => a.id));
+    let count = here.size;
     for (const { id, name } of b.nativeAccounts) {
       if (here.has(id)) native.push({ id, name, outcome: "exists" });
+      else if (count >= MAX_ACCOUNTS) native.push({ id, name, outcome: "skipped" });
       else {
         await nativeWa.add(id, name);
+        count += 1;
         native.push({ id, name, outcome: "added" });
       }
     }

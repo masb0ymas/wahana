@@ -2,6 +2,7 @@ import { useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { CheckCircle2, Download, Loader2, Upload, XCircle } from "lucide-react";
 import { exportBackup, pickBackup, restoreBackup, type Backup, type NativeRestore, type RestoreOptions } from "@/lib/backup";
+import { MAX_ACCOUNTS } from "@/lib/account";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui";
 import { errMsg } from "@/lib/utils";
@@ -15,6 +16,7 @@ function describeNative(rs: NativeRestore[]) {
   return [
     names("added") && `WhatsApp added, scan the QR in Sessions: ${names("added")}.`,
     names("exists") && `Already on this device, left as is: ${names("exists")}.`,
+    names("skipped") && `Not added, at most ${MAX_ACCOUNTS} accounts can be linked: ${names("skipped")}.`,
   ]
     .filter(Boolean)
     .map((t) => `${t} `)

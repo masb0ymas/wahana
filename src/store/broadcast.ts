@@ -4,6 +4,9 @@ import type { Kind, MediaItem } from "@/store/scheduler";
 /** Most attachments a broadcast may send to each recipient. */
 export const MAX_BROADCAST_ATTACHMENTS = 10;
 
+/** Most recipients a single broadcast may target. */
+export const MAX_BROADCAST_RECIPIENTS = 10;
+
 /** One attachment of a broadcast, as stored in `broadcast_media`. */
 export interface BroadcastMedia {
   broadcast_id: string;

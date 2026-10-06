@@ -33,6 +33,7 @@ import {
   listBroadcasts,
   listItems,
   MAX_BROADCAST_ATTACHMENTS,
+  MAX_BROADCAST_RECIPIENTS,
   retryFailed,
   setBroadcastStatus,
   type BroadcastSummary,
@@ -246,11 +247,9 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
   const [account, setAccount] = useState(defaultAccount);
   const chats = useAccountChats(account);
   const nativeId = accountId(account) ?? "";
-  const suffix = "@s.whatsapp.net";
   const [name, setName] = useState("");
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Map<string, string>>(new Map()); // id → name
-  const [numbers, setNumbers] = useState("");
   const [text, setText] = useState("");
   const [media, setMedia] = useState<Draft[]>([]);
   const [mediaErr, setMediaErr] = useState<string | null>(null);
@@ -278,17 +277,10 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
       .slice(0, 40);
   }, [chats, q]);
 
-  const pastedNumbers = [
-    ...new Set(
-      numbers
-        .split(/[\s,;]+/)
-        .map((n) => n.replace(/\D/g, ""))
-        .filter((n) => n.length >= 8),
-    ),
-  ];
-  const total = picked.size + pastedNumbers.filter((n) => !picked.has(`${n}${suffix}`)).length;
+  const total = picked.size;
+  const atLimit = total >= MAX_BROADCAST_RECIPIENTS;
   const kind: Kind = media[0]?.kind ?? "text";
-  const valid = total > 0 && (text.trim() || media.length > 0) && delayMin >= 1 && delayMax >= delayMin;
+  const valid = total > 0 && !atLimit && (text.trim() || media.length > 0) && delayMin >= 1 && delayMax >= delayMin;
 
   const addFiles = (pickedFiles: File[]) => {
     if (!pickedFiles.length) return;
@@ -305,22 +297,12 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
     setMedia((m) => [...m, ...add]);
   };
 
-  const removePasted = (digits: string) =>
-    setNumbers((prev) =>
-      prev
-        .split(/[\s,;]+/)
-        .filter((n) => n.replace(/\D/g, "") !== digits)
-        .filter(Boolean)
-        .join("\n"),
-    );
-
   const create = async () => {
     setBusy(true);
     setErr(null);
     try {
       const id = Math.random().toString(36).slice(2, 12);
       const recipients = [...picked.entries()].map(([chatId, n]) => ({ chatId, name: n }));
-      for (const n of pastedNumbers) if (!picked.has(`${n}${suffix}`)) recipients.push({ chatId: `${n}${suffix}`, name: `+${n}` });
       const attachments: MediaItem[] = await Promise.all(
         media.map(async (m) => ({ kind: m.kind, mime: m.mime, name: m.name, b64: await fileToBase64(m.file) })),
       );
@@ -387,11 +369,15 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
                   return (
                     <label
                       key={c.id}
-                      className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
+                      className={cn(
+                        "flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/60",
+                        on || !atLimit ? "cursor-pointer" : "cursor-not-allowed opacity-50",
+                      )}
                     >
                       <input
                         type="checkbox"
                         checked={on}
+                        disabled={!on && atLimit}
                         onChange={() =>
                           setPicked((p) => {
                             const n = new Map(p);
@@ -414,7 +400,9 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
               </div>
             </div>
             <div>
-              <Label>Selected · {total}</Label>
+              <Label>
+                Selected · {total}/{MAX_BROADCAST_RECIPIENTS}
+              </Label>
               <div className="min-h-[44px] max-h-32 overflow-y-auto rounded-lg border border-neutral-200 dark:border-neutral-700 p-2 flex flex-wrap gap-1.5 content-start">
                 {[...picked.entries()].map(([chatId, n]) => (
                   <span
@@ -437,29 +425,8 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
                     </button>
                   </span>
                 ))}
-                {pastedNumbers.map((n) => (
-                  <span
-                    key={n}
-                    className="inline-flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 text-xs"
-                  >
-                    +{n}
-                    <button type="button" onClick={() => removePasted(n)}>
-                      <X size={12} />
-                    </button>
-                  </span>
-                ))}
                 {total === 0 && <span className="text-xs text-neutral-500 self-center">Nothing selected yet.</span>}
               </div>
-            </div>
-            <div>
-              <Label>Add phone numbers (one per line / comma)</Label>
-              <textarea
-                value={numbers}
-                onChange={(e) => setNumbers(e.target.value)}
-                rows={3}
-                placeholder="628123456789&#10;628987654321"
-                className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none font-mono"
-              />
             </div>
           </div>
           <div className="space-y-3">

@@ -1,9 +1,15 @@
 [package]
 name = "wahana"
-version = "1.1.9"
+version = "1.2.0"
 description = "Wahana — cross-platform WhatsApp desktop client (native accounts)"
 authors = ["Adam Suchi Hafizullah"]
 edition = "2021"
+
+# The vendored `wacore` (see [patch.crates-io] below) is a path dependency inside this
+# directory. Excluding it keeps it out of the workspace so `cargo fmt`/`clippy` only touch
+# this crate, not the pinned third-party source.
+[workspace]
+exclude = ["vendor/wacore"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -60,6 +66,16 @@ whatsapp-rust-sqlite-storage = { version = "0.7", default-features = false }
 rusqlite = "0.32"
 base64 = "0.22"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+
+
+# Temporarily replace `wacore` 0.7.0 with a locally patched copy. The published 0.7.0 makes
+# a genuine `pair-success` from a hosted WhatsApp Business account fail with `401
+# signature-mismatch`, after which the server rolls the device back with a 516 (upstream
+# oxidezap/whatsapp-rust#1439, fixed in #1440). The fix is on the project's `main` but is not
+# in any released crate yet, so pin the patched copy here. Remove this block and the
+# `vendor/wacore` directory once a release contains the fix.
+[patch.crates-io]
+wacore = { path = "vendor/wacore" }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

@@ -12,12 +12,12 @@ use base64::Engine as _;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::whatsapp::{
-    ChannelReaction, ChatInfo, EditView, MediaInfo, MessageKind, MessageView, PreviewInfo,
-    ReplyView,
+    ChannelReaction, ChatInfo, EditView, Interactive, MediaInfo, MessageKind, MessageView,
+    PreviewInfo, ReplyView,
 };
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 15;
+const SCHEMA_VERSION: i64 = 16;
 const STATUS_CHAT: &str = "status@broadcast";
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
@@ -313,6 +313,11 @@ impl ChatDb {
                 "ALTER TABLE messages ADD COLUMN status_mention_id TEXT;",
             )?;
         }
+        if version < 16 {
+            // The structured content of a poll, location or contact message (JSON); `body`
+            // keeps the same as plain text for the chat list, notifications and quotes.
+            migrate(&conn, "ALTER TABLE messages ADD COLUMN interactive TEXT;")?;
+        }
         // Never stamp a lower version: an older build sharing this file (a previous release,
         // a dev build) would otherwise make the next newer one re-run migrations it already
         // applied.
@@ -509,8 +514,8 @@ impl ChatDb {
                  media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto, ack,
                  quote_id, quote_sender, quote_text, album_id,
                  preview_url, preview_title, preview_description, preview_image, quote_chat,
-                 status_mention_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
+                 status_mention_id, interactive)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
             params![
                 v.chat_id,
                 v.id,
@@ -540,6 +545,9 @@ impl ChatDb {
                 v.preview.as_ref().and_then(|p| p.image.as_deref()),
                 msg.quote.as_ref().and_then(|q| q.chat.as_deref()),
                 v.status_mention.as_deref(),
+                v.interactive
+                    .as_ref()
+                    .and_then(|i| serde_json::to_string(i).ok()),
             ],
         )? > 0;
         if !inserted {
@@ -1035,7 +1043,8 @@ impl ChatDb {
     pub fn statuses(&self, limit: u32) -> rusqlite::Result<Vec<(String, MessageView)>> {
         let mut stmt = self.conn.prepare(
             "SELECT sender_id, id, chat_id, from_me, sender_name, kind, body, timestamp,
-                    media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail
+                    media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail,
+                    interactive
              FROM messages WHERE chat_id = 'status@broadcast' ORDER BY timestamp DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit], |r| {
@@ -1077,6 +1086,9 @@ impl ChatDb {
                     status_mention: None,
                     album_id: None,
                     preview: None,
+                    interactive: r
+                        .get::<_, Option<String>>(16)?
+                        .and_then(|s| serde_json::from_str::<Interactive>(&s).ok()),
                 },
             ))
         })?;
@@ -1148,7 +1160,7 @@ impl ChatDb {
                         media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack,
                         revoked_at, edited_at, quote_id, quote_sender, quote_text, album_id,
                         preview_url, preview_title, preview_description, preview_image, quote_chat,
-                        status_mention_id
+                        status_mention_id, interactive
                  FROM messages
                  WHERE chat_id = ?1 {filter}
                  ORDER BY timestamp DESC
@@ -1216,6 +1228,9 @@ impl ChatDb {
                     status_mention: r.get(28)?,
                     album_id: None,
                     preview,
+                    interactive: r
+                        .get::<_, Option<String>>(29)?
+                        .and_then(|s| serde_json::from_str::<Interactive>(&s).ok()),
                 },
             ))
         })?;
@@ -1621,6 +1636,9 @@ pub fn preview(kind: MessageKind, body: &str, media_kind: Option<&str>) -> Strin
         MessageKind::Text => body.to_string(),
         MessageKind::Media if body.is_empty() => label.to_string(),
         MessageKind::Media => format!("{} {body}", label.split(' ').next().unwrap_or("")),
+        MessageKind::Poll => format!("📊 {}", body.lines().next().unwrap_or("Poll")),
+        MessageKind::Location => "📍 Location".to_string(),
+        MessageKind::Contact => "👤 Contact".to_string(),
         MessageKind::Unsupported => "Unsupported message".to_string(),
     }
 }
@@ -1651,6 +1669,9 @@ fn kind_str(kind: MessageKind) -> &'static str {
     match kind {
         MessageKind::Text => "text",
         MessageKind::Media => "media",
+        MessageKind::Poll => "poll",
+        MessageKind::Location => "location",
+        MessageKind::Contact => "contact",
         MessageKind::Unsupported => "unsupported",
     }
 }
@@ -1659,6 +1680,9 @@ fn kind_from(kind: &str) -> MessageKind {
     match kind {
         "text" => MessageKind::Text,
         "media" => MessageKind::Media,
+        "poll" => MessageKind::Poll,
+        "location" => MessageKind::Location,
+        "contact" => MessageKind::Contact,
         _ => MessageKind::Unsupported,
     }
 }
@@ -1746,6 +1770,7 @@ mod tests {
                 status_mention: Some("status1".to_string()),
                 album_id: None,
                 preview: None,
+                interactive: None,
             },
             sender_id: "a@c.us".to_string(),
             media: None,
@@ -1756,6 +1781,60 @@ mod tests {
         let messages = db.messages("g@g.us", 10).unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].status_mention.as_deref(), Some("status1"));
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn interactive_poll_survives_a_round_trip() {
+        let (db, path) = temp_db("interactive");
+        let message = IncomingMessage {
+            view: MessageView {
+                id: "p1".to_string(),
+                chat_id: "g@g.us".to_string(),
+                from_me: false,
+                sender_name: "A".to_string(),
+                sender_phone: None,
+                sender_id: None,
+                kind: MessageKind::Poll,
+                body: "Lunch?\n• Yes\n• No".to_string(),
+                timestamp: 1,
+                media: None,
+                ack: 0,
+                revoked_at: None,
+                edited_at: None,
+                edits: Vec::new(),
+                channel_reactions: Vec::new(),
+                reply_to: None,
+                status_mention: None,
+                album_id: None,
+                preview: None,
+                interactive: Some(Interactive {
+                    poll: Some(crate::whatsapp::PollInfo {
+                        question: "Lunch?".to_string(),
+                        options: vec!["Yes".to_string(), "No".to_string()],
+                        multiple: false,
+                    }),
+                    ..Default::default()
+                }),
+            },
+            sender_id: "a@c.us".to_string(),
+            media: None,
+            quote: None,
+            album: None,
+        };
+        db.insert_message(&message, false).unwrap();
+        let messages = db.messages("g@g.us", 10).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(messages[0].kind, MessageKind::Poll));
+        let poll = messages[0]
+            .interactive
+            .as_ref()
+            .and_then(|i| i.poll.as_ref());
+        assert_eq!(
+            poll.map(|p| p.options.clone()),
+            Some(vec!["Yes".to_string(), "No".to_string()])
+        );
         drop(db);
         let _ = std::fs::remove_file(&path);
     }

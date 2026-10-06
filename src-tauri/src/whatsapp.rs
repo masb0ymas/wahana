@@ -139,6 +139,9 @@ pub struct MessageView {
     pub album_id: Option<String>,
     /// The link preview WhatsApp embedded in the message, when it has one.
     pub preview: Option<PreviewInfo>,
+    /// The structured content of a poll, location or contact message; `body` carries the
+    /// same as plain text for the chat list, notifications and quotes.
+    pub interactive: Option<Interactive>,
 }
 
 /// A link preview as WhatsApp embedded it: the first URL in the text plus the title,
@@ -206,12 +209,55 @@ pub struct MediaInfo {
     pub thumbnail: Option<String>,
 }
 
+/// The structured content of a poll, location or contact message. Only the part matching the
+/// message's kind is set; the others stay absent.
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Interactive {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll: Option<PollInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<LocationInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contacts: Option<Vec<ContactCard>>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PollInfo {
+    pub question: String,
+    pub options: Vec<String>,
+    /// More than one answer may be picked.
+    pub multiple: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocationInfo {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub name: Option<String>,
+    pub address: Option<String>,
+    /// A live location shared for a period rather than a fixed pin.
+    pub live: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactCard {
+    pub name: String,
+    pub phone: Option<String>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageKind {
     Text,
     Media,
-    /// A real message this client cannot show yet (location, contact, poll, …).
+    Poll,
+    Location,
+    Contact,
+    /// A real message this client cannot show yet.
     Unsupported,
 }
 
@@ -677,18 +723,32 @@ fn extract_media(message: &wa::Message) -> Option<StoredMedia> {
 }
 
 /// What to show for a story mention whose story the sender did not include.
-fn story_mention_placeholder() -> (MessageKind, String, Option<StoredMedia>) {
+fn story_mention_placeholder() -> (
+    MessageKind,
+    String,
+    Option<StoredMedia>,
+    Option<Interactive>,
+) {
     (
         MessageKind::Text,
         "📣 Mentioned you in a story".to_string(),
+        None,
         None,
     )
 }
 
 /// The text of a message plus its attachment, or `None` for protocol traffic (reactions,
 /// revokes, key distribution) that rides on the message channel but is not a message of
-/// its own.
-fn message_content(message: &wa::Message) -> Option<(MessageKind, String, Option<StoredMedia>)> {
+/// its own. A poll, location or contact carries its structured content in the last element
+/// and the same readable text in the second.
+fn message_content(
+    message: &wa::Message,
+) -> Option<(
+    MessageKind,
+    String,
+    Option<StoredMedia>,
+    Option<Interactive>,
+)> {
     // An album member can arrive wrapped; the wrapper holds the photo or video itself.
     if let Some(child) = message
         .associated_child_message
@@ -709,25 +769,241 @@ fn message_content(message: &wa::Message) -> Option<(MessageKind, String, Option
             .message
             .as_option()
             .and_then(message_content)
-            .filter(|(kind, _, _)| !matches!(kind, MessageKind::Unsupported));
+            .filter(|(kind, _, _, _)| !matches!(kind, MessageKind::Unsupported));
         return Some(inner.unwrap_or_else(story_mention_placeholder));
     }
     if let Some(media) = extract_media(message) {
         let caption = message.get_caption().unwrap_or_default().to_string();
-        return Some((MessageKind::Media, caption, Some(media)));
+        return Some((MessageKind::Media, caption, Some(media), None));
     }
     if let Some(text) = message.text_content() {
-        return Some((MessageKind::Text, text.to_string(), None));
+        return Some((MessageKind::Text, text.to_string(), None, None));
+    }
+    if let Some((kind, body, interactive)) = interactive_content(message) {
+        return Some((kind, body, None, Some(interactive)));
     }
     let base = message.get_base_message();
     if base.protocol_message.is_set()
         || base.reaction_message.is_set()
         || base.sender_key_distribution_message.is_set()
         || base.album_message.is_set()
+        // A vote updates its poll; it is not a message of its own.
+        || base.poll_update_message.is_set()
     {
         return None;
     }
-    Some((MessageKind::Unsupported, String::new(), None))
+    Some((MessageKind::Unsupported, String::new(), None, None))
+}
+
+/// The structured content of a poll, location or contact message, with the same as readable
+/// text. `None` for every other message. Wrappers (view-once, device-sent, …) are unwrapped
+/// by `get_base_message`, the same way the protocol checks below rely on it.
+fn interactive_content(message: &wa::Message) -> Option<(MessageKind, String, Interactive)> {
+    let base = message.get_base_message();
+    // A v4 poll rides inside a `FutureProofMessage` wrapper, which `get_base_message` does not
+    // unwrap. Peel it, then unwrap whatever it holds.
+    let base = base
+        .poll_creation_message_v4
+        .as_option()
+        .and_then(|w| w.message.as_option())
+        .map(|inner| inner.get_base_message())
+        .unwrap_or(base);
+    if let Some(p) = base
+        .poll_creation_message
+        .as_option()
+        .or(base.poll_creation_message_v2.as_option())
+        .or(base.poll_creation_message_v3.as_option())
+        .or(base.poll_creation_message_v5.as_option())
+    {
+        let question = p.name.clone().unwrap_or_default();
+        let options: Vec<String> = p
+            .options
+            .iter()
+            .filter_map(|o| o.option_name.clone())
+            .filter(|o| !o.is_empty())
+            .collect();
+        // WhatsApp sends 1 for a single-choice poll and 0 when any number may be picked.
+        let multiple = p.selectable_options_count.unwrap_or(0) != 1;
+        let body = poll_body(&question, &options);
+        return Some((
+            MessageKind::Poll,
+            body,
+            Interactive {
+                poll: Some(PollInfo {
+                    question,
+                    options,
+                    multiple,
+                }),
+                ..Default::default()
+            },
+        ));
+    }
+    if let Some(l) = base.location_message.as_option() {
+        let (lat, lng) = (
+            l.degrees_latitude.unwrap_or_default(),
+            l.degrees_longitude.unwrap_or_default(),
+        );
+        let name = l.name.clone().filter(|s| !s.is_empty());
+        let address = l.address.clone().filter(|s| !s.is_empty());
+        let body = location_body(name.as_deref(), address.as_deref(), lat, lng);
+        return Some((
+            MessageKind::Location,
+            body,
+            Interactive {
+                location: Some(LocationInfo {
+                    latitude: lat,
+                    longitude: lng,
+                    name,
+                    address,
+                    live: l.is_live.unwrap_or(false),
+                }),
+                ..Default::default()
+            },
+        ));
+    }
+    if let Some(l) = base.live_location_message.as_option() {
+        let (lat, lng) = (
+            l.degrees_latitude.unwrap_or_default(),
+            l.degrees_longitude.unwrap_or_default(),
+        );
+        let body = location_body(None, l.caption.as_deref(), lat, lng);
+        return Some((
+            MessageKind::Location,
+            body,
+            Interactive {
+                location: Some(LocationInfo {
+                    latitude: lat,
+                    longitude: lng,
+                    name: None,
+                    address: None,
+                    live: true,
+                }),
+                ..Default::default()
+            },
+        ));
+    }
+    if let Some(c) = base.contact_message.as_option() {
+        let card = contact_card(c.display_name.as_deref(), c.vcard.as_deref());
+        let body = contact_body(std::slice::from_ref(&card));
+        return Some((
+            MessageKind::Contact,
+            body,
+            Interactive {
+                contacts: Some(vec![card]),
+                ..Default::default()
+            },
+        ));
+    }
+    if let Some(ca) = base.contacts_array_message.as_option() {
+        let cards: Vec<ContactCard> = ca
+            .contacts
+            .iter()
+            .map(|c| contact_card(c.display_name.as_deref(), c.vcard.as_deref()))
+            .collect();
+        if !cards.is_empty() {
+            return Some((
+                MessageKind::Contact,
+                contact_body(&cards),
+                Interactive {
+                    contacts: Some(cards),
+                    ..Default::default()
+                },
+            ));
+        }
+    }
+    None
+}
+
+/// The vCard property a line holds (`FN`, `TEL`, …) without its parameters or the group
+/// prefix iOS adds (`item1.TEL;waid=…`), plus the line's parameters and value.
+fn vcard_line(line: &str) -> Option<(String, &str, &str)> {
+    let (head, value) = line.trim().split_once(':')?;
+    let (name, params) = head.split_once(';').unwrap_or((head, ""));
+    let name = name.rsplit('.').next().unwrap_or(name).to_ascii_uppercase();
+    Some((name, params, value))
+}
+
+/// One contact as a card: its display name, else the vCard's formatted name, plus the first
+/// phone number the vCard carries.
+fn contact_card(display_name: Option<&str>, vcard: Option<&str>) -> ContactCard {
+    let from_vcard = vcard.and_then(|v| {
+        v.lines()
+            .filter_map(vcard_line)
+            .find(|(name, _, _)| name == "FN")
+            .map(|(_, _, value)| value.trim())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    });
+    let name = display_name
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or(from_vcard)
+        .unwrap_or_else(|| "Contact".to_string());
+    ContactCard {
+        name,
+        phone: vcard.and_then(phone_from_vcard),
+    }
+}
+
+/// The first `TEL` number in a vCard, stripped of spacing. A `waid` parameter, when there, is
+/// the WhatsApp number itself, so it wins over the formatted value.
+fn phone_from_vcard(vcard: &str) -> Option<String> {
+    let (_, params, value) = vcard
+        .lines()
+        .filter_map(vcard_line)
+        .find(|(name, _, _)| name == "TEL")?;
+    let waid = params.split(';').find_map(|p| {
+        let (key, value) = p.split_once('=')?;
+        (key.eq_ignore_ascii_case("waid") && !value.is_empty()).then(|| format!("+{value}"))
+    });
+    let digits = waid.unwrap_or_else(|| value.trim().replace([' ', '-', '(', ')'], ""));
+    if digits.is_empty() {
+        None
+    } else {
+        Some(digits)
+    }
+}
+
+/// A poll as readable text: its question, then one bullet per option.
+fn poll_body(question: &str, options: &[String]) -> String {
+    let question = if question.is_empty() {
+        "Poll"
+    } else {
+        question
+    };
+    let mut body = question.to_string();
+    for option in options {
+        body.push_str(&format!("\n• {option}"));
+    }
+    body
+}
+
+/// A location as readable text: its name and address, then the coordinates.
+fn location_body(name: Option<&str>, address: Option<&str>, lat: f64, lng: f64) -> String {
+    let mut body = String::new();
+    for line in [name, address].into_iter().flatten() {
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        body.push_str(line);
+    }
+    if !body.is_empty() {
+        body.push('\n');
+    }
+    body.push_str(&format!("{lat}, {lng}"));
+    body
+}
+
+/// Shared contacts as readable text: one line per contact.
+fn contact_body(cards: &[ContactCard]) -> String {
+    cards
+        .iter()
+        .map(|c| match &c.phone {
+            Some(phone) => format!("{} — {phone}", c.name),
+            None => c.name.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The album a photo or video was sent in: the id of its album message, which every member
@@ -810,7 +1086,7 @@ fn quote_of(message: &wa::Message) -> Option<QuoteRef> {
         .quoted_message
         .as_option()
         .and_then(message_content)
-        .map(|(kind, body, media)| preview(kind, &body, media.as_ref().map(|m| m.kind)))
+        .map(|(kind, body, media, _)| preview(kind, &body, media.as_ref().map(|m| m.kind)))
         .unwrap_or_default();
     Some(QuoteRef {
         id,
@@ -1019,7 +1295,7 @@ fn history_ack(info: &wa::WebMessageInfo) -> u8 {
 fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingMessage> {
     let key = info.key.as_option()?;
     let id = key.id.clone()?;
-    let (kind, body, media) = message_content(info.message.as_option()?)?;
+    let (kind, body, media, interactive) = message_content(info.message.as_option()?)?;
     let from_me = key.from_me.unwrap_or(false);
     let sender_id = if from_me {
         String::new()
@@ -1052,6 +1328,7 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
             status_mention: info.message.as_option().and_then(status_mention_of),
             album_id: None,
             preview: info.message.as_option().and_then(link_preview),
+            interactive,
         },
         sender_id,
         media,
@@ -1494,10 +1771,15 @@ async fn run_account(
                 inner.status = WaStatus::Working;
                 inner.error = None;
                 inner.me = Some(AccountMe {
+                    // `Jid`'s Display appends the device suffix (`628…:16@s.whatsapp.net`), which
+                    // the profile-picture lookup does not answer for and which leaks into the
+                    // number shown in the UI, so store the bare JID like every other consumer.
+                    // Accounts without a phone number fall back to their LID.
                     id: device
                         .pn
                         .as_ref()
-                        .map(|jid| jid.to_string())
+                        .or(device.lid.as_ref())
+                        .map(|jid| bare_jid(&jid.to_string()))
                         .unwrap_or_default(),
                     push_name: device.push_name.clone(),
                 });
@@ -1643,7 +1925,7 @@ async fn run_account(
                 }
             }
 
-            let Some((kind, body, media)) = message_content(&ctx.message) else {
+            let Some((kind, body, media, interactive)) = message_content(&ctx.message) else {
                 return;
             };
             let from_me = source.is_from_me;
@@ -1675,6 +1957,7 @@ async fn run_account(
                     status_mention: status_mention_of(&ctx.message),
                     album_id: None,
                     preview: link_preview(&ctx.message),
+                    interactive,
                 },
                 sender_id: if from_me { String::new() } else { sender },
                 media,
@@ -2083,6 +2366,7 @@ pub async fn wa_native_send_text(
             status_mention: None,
             album_id: None,
             preview: None,
+            interactive: None,
         },
         sender_id: String::new(),
         media: None,
@@ -2348,6 +2632,18 @@ pub async fn wa_native_forward(
         .ok_or("message not found")?;
     let message = stored_message(&target)?;
     let media = extract_media(&message);
+    let content = message_content(&message);
+    if matches!(content, Some((MessageKind::Poll, ..))) {
+        return Err("Polls can't be forwarded".to_string());
+    }
+    // A location or contact keeps its card; anything else is media or text as before.
+    let (kind, interactive) = match content {
+        Some((kind @ (MessageKind::Location | MessageKind::Contact), _, _, interactive)) => {
+            (kind, interactive)
+        }
+        _ if media.is_some() => (MessageKind::Media, None),
+        _ => (MessageKind::Text, None),
+    };
     let to: Jid = to_chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {to_chat_id}"))?;
@@ -2362,11 +2658,7 @@ pub async fn wa_native_forward(
         sender_name,
         sender_phone: None,
         sender_id: None,
-        kind: if media.is_some() {
-            MessageKind::Media
-        } else {
-            MessageKind::Text
-        },
+        kind,
         body: target.body,
         timestamp: now_millis(),
         media: None,
@@ -2379,6 +2671,7 @@ pub async fn wa_native_forward(
         status_mention: None,
         album_id: None,
         preview: link_preview(&message),
+        interactive,
     };
     record_message(
         &app,
@@ -2561,7 +2854,9 @@ pub async fn wa_native_channel_sync(
                 .iter()
                 .map(|r| (r.code.clone(), r.count))
                 .collect();
-            if let Some((kind, body, media)) = m.message.as_ref().and_then(message_content) {
+            if let Some((kind, body, media, interactive)) =
+                m.message.as_ref().and_then(message_content)
+            {
                 let message = IncomingMessage {
                     view: MessageView {
                         id: m.message_id.clone(),
@@ -2583,6 +2878,7 @@ pub async fn wa_native_channel_sync(
                         status_mention: m.message.as_ref().and_then(status_mention_of),
                         album_id: None,
                         preview: m.message.as_ref().and_then(link_preview),
+                        interactive,
                     },
                     sender_id: String::new(),
                     media,
@@ -3371,6 +3667,7 @@ pub async fn wa_native_send_media(
             status_mention: None,
             album_id: None,
             preview: None,
+            interactive: None,
         },
         sender_id: String::new(),
         media,
@@ -4474,4 +4771,149 @@ pub async fn wa_native_mute_chat(
         .unwrap()
         .set_mute(&bare_jid(&chat_id), until.map_or(0, |e| e.max(-1)));
     Ok(())
+}
+
+#[cfg(test)]
+mod content_tests {
+    use super::*;
+    use whatsapp_rust::waproto::buffa::MessageField;
+    use whatsapp_rust::waproto::whatsapp as wa;
+
+    fn poll(name: &str, options: &[&str]) -> wa::Message {
+        poll_choosing(name, options, 1)
+    }
+
+    fn poll_choosing(name: &str, options: &[&str], selectable: u32) -> wa::Message {
+        wa::Message {
+            poll_creation_message_v3: MessageField::some(wa::message::PollCreationMessage {
+                name: Some(name.to_string()),
+                selectable_options_count: Some(selectable),
+                options: options
+                    .iter()
+                    .map(|o| wa::message::poll_creation_message::Option {
+                        option_name: Some((*o).to_string()),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_v3_poll_is_read_as_a_poll() {
+        let (kind, body, media, interactive) =
+            message_content(&poll("Lunch?", &["Yes", "No"])).unwrap();
+        assert!(matches!(kind, MessageKind::Poll));
+        assert!(media.is_none());
+        assert_eq!(body, "Lunch?\n• Yes\n• No");
+        let poll = interactive.and_then(|i| i.poll).unwrap();
+        assert_eq!(poll.options, vec!["Yes", "No"]);
+        assert!(!poll.multiple);
+    }
+
+    #[test]
+    fn a_v4_wrapped_poll_is_unwrapped() {
+        let wrapped = wa::Message {
+            poll_creation_message_v4: MessageField::some(wa::message::FutureProofMessage {
+                message: MessageField::some(poll("Pick", &["A"])),
+            }),
+            ..Default::default()
+        };
+        let (kind, _, _, interactive) = message_content(&wrapped).unwrap();
+        assert!(matches!(kind, MessageKind::Poll));
+        assert_eq!(interactive.and_then(|i| i.poll).unwrap().question, "Pick");
+    }
+
+    #[test]
+    fn a_location_is_read_with_its_coordinates() {
+        let message = wa::Message {
+            location_message: MessageField::some(wa::message::LocationMessage {
+                degrees_latitude: Some(1.5),
+                degrees_longitude: Some(-2.25),
+                name: Some("Office".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let (kind, body, _, interactive) = message_content(&message).unwrap();
+        assert!(matches!(kind, MessageKind::Location));
+        assert!(body.contains("1.5, -2.25"));
+        let location = interactive.and_then(|i| i.location).unwrap();
+        assert_eq!(location.longitude, -2.25);
+    }
+
+    #[test]
+    fn a_contact_is_read_with_its_phone() {
+        let message = wa::Message {
+            contact_message: MessageField::some(wa::message::ContactMessage {
+                display_name: Some("Bob".to_string()),
+                vcard: Some(
+                    "BEGIN:VCARD\nFN:Bob\nTEL;type=CELL;waid=123:+1 234-567\nEND:VCARD".to_string(),
+                ),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let (kind, _, _, interactive) = message_content(&message).unwrap();
+        assert!(matches!(kind, MessageKind::Contact));
+        let contacts = interactive.and_then(|i| i.contacts).unwrap();
+        assert_eq!(contacts[0].name, "Bob");
+        assert_eq!(contacts[0].phone.as_deref(), Some("+123"));
+    }
+
+    #[test]
+    fn an_ios_vcard_phone_is_found_behind_its_group_prefix() {
+        let card = contact_card(
+            None,
+            Some("BEGIN:VCARD\nFN:Ann: Work\nitem1.TEL:+62 812-3456\nEND:VCARD"),
+        );
+        assert_eq!(card.name, "Ann: Work");
+        assert_eq!(card.phone.as_deref(), Some("+628123456"));
+    }
+
+    #[test]
+    fn a_poll_open_to_any_number_of_answers_is_multiple() {
+        let (_, _, _, interactive) =
+            message_content(&poll_choosing("Pick", &["A", "B"], 0)).unwrap();
+        assert!(interactive.and_then(|i| i.poll).unwrap().multiple);
+    }
+
+    #[test]
+    fn a_poll_vote_is_not_a_message() {
+        let message = wa::Message {
+            poll_update_message: MessageField::some(Default::default()),
+            ..Default::default()
+        };
+        assert!(message_content(&message).is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bare_jid, Jid};
+
+    /// The device snapshot's `pn`/`lid` print with the device suffix (`628…:16@s.whatsapp.net`).
+    /// The account's self id must be the bare JID: the profile-picture lookup is not answered for
+    /// a device-scoped JID (so the tile fell back to initials), and the suffix leaked into the
+    /// number shown in the UI.
+    #[test]
+    fn self_id_is_the_bare_jid() {
+        // What `Device.pn` actually holds for a linked account: the raw Display keeps the device.
+        let stored: Jid = "6287837554403:16@s.whatsapp.net".parse().unwrap();
+        assert_eq!(stored.to_string(), "6287837554403:16@s.whatsapp.net");
+        assert_eq!(
+            bare_jid(&stored.to_string()),
+            "6287837554403@s.whatsapp.net"
+        );
+
+        assert_eq!(bare_jid("155933300805837:16@lid"), "155933300805837@lid");
+        // Already bare, and non-JID inputs, pass through.
+        assert_eq!(
+            bare_jid("6287837554403@s.whatsapp.net"),
+            "6287837554403@s.whatsapp.net"
+        );
+        assert_eq!(bare_jid(""), "");
+    }
 }

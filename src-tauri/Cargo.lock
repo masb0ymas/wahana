@@ -6525,8 +6525,6 @@ dependencies = [
 [[package]]
 name = "wacore"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6139a98fece24956f1d6bf164c82c5daefb43834813d96a879b41e010707c2c2"
 dependencies = [
  "aes",
  "anyhow",
@@ -6674,7 +6672,7 @@ dependencies = [
 
 [[package]]
 name = "wahana"
-version = "1.1.9"
+version = "1.2.0"
 dependencies = [
  "base64 0.22.1",
  "image",

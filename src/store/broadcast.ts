@@ -1,5 +1,18 @@
 import { db } from "@/store/scheduler";
-import type { Kind } from "@/store/scheduler";
+import type { Kind, MediaItem } from "@/store/scheduler";
+
+/** Most attachments a broadcast may send to each recipient. */
+export const MAX_BROADCAST_ATTACHMENTS = 10;
+
+/** One attachment of a broadcast, as stored in `broadcast_media`. */
+export interface BroadcastMedia {
+  broadcast_id: string;
+  position: number;
+  kind: Kind;
+  mime: string | null;
+  name: string | null;
+  b64: string;
+}
 
 export interface Broadcast {
   id: string;
@@ -34,6 +47,8 @@ export interface BroadcastSummary extends Broadcast {
   total: number;
   sent: number;
   failed: number;
+  /** Number of attachments, from a subquery (blobs stay in `broadcast_media`). */
+  media_count?: number;
 }
 
 const COLS =
@@ -42,8 +57,13 @@ const COLS =
 const SUMMARY_SQL = `SELECT ${COLS}, NULL AS media_b64,
    (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id) AS total,
    (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id AND i.status = 'sent') AS sent,
-   (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id AND i.status = 'error') AS failed
+   (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id AND i.status = 'error') AS failed,
+   (SELECT COUNT(*) FROM broadcast_media m WHERE m.broadcast_id = b.id) AS media_count
  FROM broadcasts b`;
+
+/** Attachments of one broadcast, in send order. */
+export const listBroadcastMedia = async (broadcastId: string) =>
+  (await db()).select<BroadcastMedia[]>("SELECT * FROM broadcast_media WHERE broadcast_id = $1 ORDER BY position ASC", [broadcastId]);
 
 /** All broadcasts, or — with an account — only that account's. */
 export const listBroadcasts = async (account?: string) =>
@@ -74,6 +94,7 @@ export const nextPending = async (id: string) =>
 export async function createBroadcast(
   b: Omit<Broadcast, "created_at" | "started_at" | "finished_at" | "status">,
   recipients: { chatId: string; name?: string | null }[],
+  media: MediaItem[] = [],
 ) {
   const d = await db();
   await d.execute(
@@ -94,6 +115,17 @@ export async function createBroadcast(
       Math.floor(Date.now() / 1000),
     ],
   );
+  for (let i = 0; i < media.length; i++) {
+    const m = media[i]!;
+    await d.execute("INSERT INTO broadcast_media (broadcast_id, position, kind, mime, name, b64) VALUES ($1,$2,$3,$4,$5,$6)", [
+      b.id,
+      i,
+      m.kind,
+      m.mime,
+      m.name,
+      m.b64,
+    ]);
+  }
   for (const r of recipients)
     await d.execute("INSERT INTO broadcast_items (broadcast_id, chat_id, name) VALUES ($1,$2,$3)", [b.id, r.chatId, r.name ?? null]);
 }
@@ -120,6 +152,7 @@ export const markItem = async (itemId: number, status: BroadcastItem["status"], 
 export const deleteBroadcast = async (id: string) => {
   const d = await db();
   await d.execute("DELETE FROM broadcast_items WHERE broadcast_id = $1", [id]);
+  await d.execute("DELETE FROM broadcast_media WHERE broadcast_id = $1", [id]);
   await d.execute("DELETE FROM broadcasts WHERE id = $1", [id]);
 };
 

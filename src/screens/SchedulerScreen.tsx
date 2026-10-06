@@ -23,11 +23,12 @@ import {
   Video,
   FileText,
 } from "lucide-react";
-import { useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { accountId, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
 import { useAccountChats } from "@/lib/useAccountChats";
 import { AccountSelect } from "@/components/AccountSelect";
+import { ChatAvatar } from "@/components/ChatAvatar";
 import { openAccounts } from "@/components/NotConnected";
-import { Avatar, Button, Input, Label } from "@/components/ui";
+import { Button, Input, Label } from "@/components/ui";
 import { cn, displayId, fileToBase64, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { stripWaMarkdown } from "@/lib/waMarkdown";
 import {
@@ -275,6 +276,7 @@ function ScheduleForm({
 }) {
   const [account, setAccount] = useState(initial?.account ?? defaultAccount);
   const chats = useAccountChats(account);
+  const nativeId = accountId(account) ?? "";
   const suffix = "@s.whatsapp.net";
   const [targetType, setTargetType] = useState<TargetType>(initial?.target_type ?? "chat");
   const [targetId, setTargetId] = useState(initial?.target_id ?? "");
@@ -448,7 +450,7 @@ function ScheduleForm({
               <div className="rounded-lg border border-neutral-200 dark:border-neutral-700">
                 {targetId ? (
                   <div className="flex items-center gap-2 px-3 py-2">
-                    <Avatar name={targetName || displayId(targetId)} size={28} />
+                    <ChatAvatar accountId={nativeId} chatId={targetId} name={targetName || displayId(targetId)} size={28} />
                     <span className="flex-1 truncate text-sm">
                       {targetName || displayId(targetId)} <span className="text-xs text-neutral-500">{targetId}</span>
                     </span>
@@ -480,7 +482,7 @@ function ScheduleForm({
                           }}
                           className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         >
-                          <Avatar name={c.name || displayId(c.id)} size={26} />
+                          <ChatAvatar accountId={nativeId} chatId={c.id} name={c.name || displayId(c.id)} size={26} />
                           <span className="flex-1 truncate">{c.name || displayId(c.id)}</span>
                           {isChannel(c.id) ? (
                             <Megaphone size={12} className="text-neutral-400" />

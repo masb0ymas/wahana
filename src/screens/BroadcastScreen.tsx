@@ -16,11 +16,15 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
+  Image as ImageIcon,
+  Video,
+  FileText,
 } from "lucide-react";
-import { useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { accountId, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
 import { useAccountChats } from "@/lib/useAccountChats";
 import { AccountSelect } from "@/components/AccountSelect";
-import { Avatar, Button, Input, Label } from "@/components/ui";
+import { ChatAvatar } from "@/components/ChatAvatar";
+import { Button, Input, Label } from "@/components/ui";
 import { cn, displayId, fileToBase64, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { confirm } from "@/components/Confirm";
 import {
@@ -28,15 +32,21 @@ import {
   deleteBroadcast,
   listBroadcasts,
   listItems,
+  MAX_BROADCAST_ATTACHMENTS,
   retryFailed,
   setBroadcastStatus,
   type BroadcastSummary,
 } from "@/store/broadcast";
-import type { Kind } from "@/store/scheduler";
+import type { Kind, MediaItem } from "@/store/scheduler";
 import { openAccounts } from "@/components/NotConnected";
 import { GenerateButton } from "@/components/GenerateButton";
 
 const fmt = (s: number) => new Date(s * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+
+/** One attachment picked in the form. */
+type Draft = { key: string; kind: Kind; mime: string; name: string; file: File };
+const uid = () => Math.random().toString(36).slice(2, 9);
+const kindOfFile = (file: File): Kind => (file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file");
 
 /** Shown when no account is linked to send from. */
 function NoAccounts() {
@@ -112,10 +122,10 @@ export function BroadcastScreen() {
                     >
                       {b.status}
                     </span>
-                    {b.kind !== "text" && (
+                    {(b.media_count ?? 0) > 0 && (
                       <span className="text-[10px] rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 flex items-center gap-1">
                         <Paperclip size={10} />
-                        {b.kind}
+                        {b.media_count === 1 ? b.kind : `${b.media_count} files`}
                       </span>
                     )}
                   </div>
@@ -235,13 +245,15 @@ export function BroadcastScreen() {
 function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: string; onClose: () => void; onCreated: () => void }) {
   const [account, setAccount] = useState(defaultAccount);
   const chats = useAccountChats(account);
+  const nativeId = accountId(account) ?? "";
   const suffix = "@s.whatsapp.net";
   const [name, setName] = useState("");
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Map<string, string>>(new Map()); // id → name
   const [numbers, setNumbers] = useState("");
   const [text, setText] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [media, setMedia] = useState<Draft[]>([]);
+  const [mediaErr, setMediaErr] = useState<string | null>(null);
   const [delayMin, setDelayMin] = useState(5);
   const [delayMax, setDelayMax] = useState(15);
   const [startNow, setStartNow] = useState(true);
@@ -266,13 +278,41 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
       .slice(0, 40);
   }, [chats, q]);
 
-  const pastedNumbers = numbers
-    .split(/[\s,;]+/)
-    .map((n) => n.replace(/\D/g, ""))
-    .filter((n) => n.length >= 8);
+  const pastedNumbers = [
+    ...new Set(
+      numbers
+        .split(/[\s,;]+/)
+        .map((n) => n.replace(/\D/g, ""))
+        .filter((n) => n.length >= 8),
+    ),
+  ];
   const total = picked.size + pastedNumbers.filter((n) => !picked.has(`${n}${suffix}`)).length;
-  const kind: Kind = file ? (file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file") : "text";
-  const valid = total > 0 && (text.trim() || file) && delayMin >= 1 && delayMax >= delayMin;
+  const kind: Kind = media[0]?.kind ?? "text";
+  const valid = total > 0 && (text.trim() || media.length > 0) && delayMin >= 1 && delayMax >= delayMin;
+
+  const addFiles = (pickedFiles: File[]) => {
+    if (!pickedFiles.length) return;
+    const room = MAX_BROADCAST_ATTACHMENTS - media.length;
+    if (room <= 0) {
+      setMediaErr(`At most ${MAX_BROADCAST_ATTACHMENTS} attachments per broadcast.`);
+      return;
+    }
+    if (pickedFiles.length > room) setMediaErr(`At most ${MAX_BROADCAST_ATTACHMENTS} attachments per broadcast.`);
+    else setMediaErr(null);
+    const add: Draft[] = pickedFiles
+      .slice(0, room)
+      .map((f) => ({ key: uid(), kind: kindOfFile(f), mime: f.type || "application/octet-stream", name: f.name, file: f }));
+    setMedia((m) => [...m, ...add]);
+  };
+
+  const removePasted = (digits: string) =>
+    setNumbers((prev) =>
+      prev
+        .split(/[\s,;]+/)
+        .filter((n) => n.replace(/\D/g, "") !== digits)
+        .filter(Boolean)
+        .join("\n"),
+    );
 
   const create = async () => {
     setBusy(true);
@@ -281,6 +321,9 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
       const id = Math.random().toString(36).slice(2, 12);
       const recipients = [...picked.entries()].map(([chatId, n]) => ({ chatId, name: n }));
       for (const n of pastedNumbers) if (!picked.has(`${n}${suffix}`)) recipients.push({ chatId: `${n}${suffix}`, name: `+${n}` });
+      const attachments: MediaItem[] = await Promise.all(
+        media.map(async (m) => ({ kind: m.kind, mime: m.mime, name: m.name, b64: await fileToBase64(m.file) })),
+      );
       await createBroadcast(
         {
           id,
@@ -290,13 +333,14 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
           name: name.trim() || null,
           kind,
           text: text.trim() || null,
-          media_b64: file ? await fileToBase64(file) : null,
-          media_mime: file ? file.type || "application/octet-stream" : null,
-          media_name: file?.name ?? null,
+          media_b64: null,
+          media_mime: null,
+          media_name: null,
           delay_min: delayMin,
           delay_max: delayMax,
         },
         recipients,
+        attachments,
       );
       if (startNow) await setBroadcastStatus(id, "running");
       onCreated();
@@ -319,27 +363,25 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
         </div>
         <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-4">
           <div className="space-y-3">
-            <div className="grid grid-cols-[1fr_auto] gap-3">
-              <div>
-                <Label>Name (for your list)</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Promo September" />
-              </div>
-              <div>
-                <Label>Send from (account)</Label>
-                <AccountSelect
-                  value={account}
-                  onChange={(v) => {
-                    setAccount(v);
-                    setPicked(new Map());
-                  }}
-                  className="min-w-[180px]"
-                />
-              </div>
+            <div>
+              <Label>Send from (account)</Label>
+              <AccountSelect
+                value={account}
+                onChange={(v) => {
+                  setAccount(v);
+                  setPicked(new Map());
+                }}
+                className="w-full"
+              />
             </div>
             <div>
-              <Label>Recipients · {total} selected</Label>
+              <Label>Name (for your list)</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Promo September" />
+            </div>
+            <div>
+              <Label>Recipients</Label>
               <Input placeholder="Search chats & contacts" value={q} onChange={(e) => setQ(e.target.value)} />
-              <div className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-neutral-200 dark:border-neutral-700 divide-y divide-neutral-100 dark:divide-neutral-800">
+              <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-neutral-200 dark:border-neutral-700 divide-y divide-neutral-100 dark:divide-neutral-800">
                 {candidates.map((c) => {
                   const on = picked.has(c.id);
                   return (
@@ -359,7 +401,7 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
                           })
                         }
                       />
-                      <Avatar name={c.name} size={24} />
+                      <ChatAvatar accountId={nativeId} chatId={c.id} name={c.name} size={24} />
                       <span className="flex-1 truncate">{c.name}</span>
                       {isChannel(c.id) ? (
                         <Megaphone size={12} className="text-neutral-400" />
@@ -372,7 +414,45 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
               </div>
             </div>
             <div>
-              <Label>Or paste phone numbers (one per line / comma)</Label>
+              <Label>Selected · {total}</Label>
+              <div className="min-h-[44px] max-h-32 overflow-y-auto rounded-lg border border-neutral-200 dark:border-neutral-700 p-2 flex flex-wrap gap-1.5 content-start">
+                {[...picked.entries()].map(([chatId, n]) => (
+                  <span
+                    key={chatId}
+                    className="inline-flex items-center gap-1 rounded-full bg-wa/15 text-wa-dark dark:text-wa pl-0.5 pr-2 py-0.5 text-xs"
+                  >
+                    <ChatAvatar accountId={nativeId} chatId={chatId} name={n || displayId(chatId)} size={18} />
+                    <span className="max-w-[160px] truncate">{n || displayId(chatId)}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPicked((p) => {
+                          const next = new Map(p);
+                          next.delete(chatId);
+                          return next;
+                        })
+                      }
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                {pastedNumbers.map((n) => (
+                  <span
+                    key={n}
+                    className="inline-flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 text-xs"
+                  >
+                    +{n}
+                    <button type="button" onClick={() => removePasted(n)}>
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                {total === 0 && <span className="text-xs text-neutral-500 self-center">Nothing selected yet.</span>}
+              </div>
+            </div>
+            <div>
+              <Label>Add phone numbers (one per line / comma)</Label>
               <textarea
                 value={numbers}
                 onChange={(e) => setNumbers(e.target.value)}
@@ -385,7 +465,7 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
           <div className="space-y-3">
             <div>
               <Label>
-                {file ? "Caption" : "Message"} · variables {"{name} {phone} {time} {date}"}
+                {media.length ? "Caption" : "Message"} · variables {"{name} {phone} {time} {date}"}
               </Label>
               <textarea
                 value={text}
@@ -396,19 +476,44 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
               />
               <div className="flex items-center gap-2 mt-1.5">
                 <GenerateButton kind="broadcast" text={text} onResult={setText} account={account} />
-                <input ref={fileRef} type="file" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
-                  <Paperclip size={12} /> {file ? "Change attachment" : "Attach"}
+                <input
+                  ref={fileRef}
+                  type="file"
+                  hidden
+                  multiple
+                  onChange={(e) => {
+                    addFiles(Array.from(e.target.files ?? []));
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={media.length >= MAX_BROADCAST_ATTACHMENTS}
+                >
+                  <Paperclip size={12} /> Attach
                 </Button>
-                {file && (
-                  <span className="text-xs text-neutral-500 flex items-center gap-1">
-                    {file.name}{" "}
-                    <button onClick={() => setFile(null)}>
-                      <X size={12} />
-                    </button>
+                {media.length > 0 && (
+                  <span className="text-xs text-neutral-500">
+                    {media.length}/{MAX_BROADCAST_ATTACHMENTS}
                   </span>
                 )}
               </div>
+              {media.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {media.map((m) => (
+                    <li key={m.key} className="flex items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2 py-1 text-xs">
+                      {m.kind === "image" ? <ImageIcon size={12} /> : m.kind === "video" ? <Video size={12} /> : <FileText size={12} />}
+                      <span className="flex-1 truncate">{m.name}</span>
+                      <button onClick={() => setMedia((list) => list.filter((x) => x.key !== m.key))}>
+                        <X size={12} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {mediaErr && <div className="text-[11px] text-amber-600 mt-1">{mediaErr}</div>}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>

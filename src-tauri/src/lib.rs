@@ -90,6 +90,12 @@ pub fn run() {
                             sql: include_str!("../migrations/009_schedule_media.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 10,
+                            description: "broadcast attachments",
+                            sql: include_str!("../migrations/010_broadcast_media.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

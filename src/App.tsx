@@ -41,6 +41,7 @@ import { useRevoked } from "@/store/revoked";
 import { usePins } from "@/store/pins";
 import { useDrafts } from "@/store/drafts";
 import { useChatPrefs } from "@/store/chatPrefs";
+import { useMediaBlur } from "@/store/mediaBlur";
 import { cn } from "@/lib/utils";
 import { useBadge } from "@/realtime/useBadge";
 import { useReactions } from "@/store/reactions";
@@ -68,6 +69,7 @@ export default function App() {
   const hydratePins = usePins((s) => s.hydrate);
   const hydrateDrafts = useDrafts((s) => s.hydrate);
   const hydrateChatPrefs = useChatPrefs((s) => s.hydrate);
+  const hydrateMediaBlur = useMediaBlur((s) => s.hydrate);
   const hydrateWa = useWhatsApp((s) => s.hydrate);
   const hydrateAccountStyles = useAccountStyle((s) => s.hydrate);
   const styles = useAccountStyle((s) => s.styles);
@@ -107,6 +109,7 @@ export default function App() {
     void hydratePins();
     void hydrateDrafts();
     void hydrateChatPrefs();
+    void hydrateMediaBlur();
     void hydrateAccountStyles();
     void hydrateAppLock();
     hydrateWa().catch(console.error);
@@ -117,6 +120,7 @@ export default function App() {
     hydratePins,
     hydrateDrafts,
     hydrateChatPrefs,
+    hydrateMediaBlur,
     hydrateAccountStyles,
     hydrateWa,
     hydrateAppLock,

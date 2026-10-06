@@ -11,19 +11,23 @@ export function TweaksSection() {
   const qc = useQueryClient();
 
   // Values are per account; a value the account has not set falls back to the built-in default
-  // (`s.sendTyping` / `s.readReceipts`), which is no longer editable from a separate scope.
+  // (`s.sendTyping` / `s.appearOnline` / `s.readReceipts`), which is no longer editable from a separate scope.
   const sendTyping = s.sendTypingByAccount[scope] ?? s.sendTyping;
+  const appearOnline = s.appearOnlineByAccount[scope] ?? s.appearOnline;
   const readReceipts = s.readReceiptsByAccount[scope] ?? s.readReceipts;
-  const overridden = scope in s.sendTypingByAccount || scope in s.readReceiptsByAccount;
+  const overridden = scope in s.sendTypingByAccount || scope in s.appearOnlineByAccount || scope in s.readReceiptsByAccount;
 
   const setSendTyping = (v: boolean) => s.save({ sendTypingByAccount: { ...s.sendTypingByAccount, [scope]: v } });
+  const setAppearOnline = (v: boolean) => s.save({ appearOnlineByAccount: { ...s.appearOnlineByAccount, [scope]: v } });
   const setReadReceipts = (v: ReadReceipts) => s.save({ readReceiptsByAccount: { ...s.readReceiptsByAccount, [scope]: v } });
   const reset = () => {
     const sendTypingByAccount = { ...s.sendTypingByAccount };
+    const appearOnlineByAccount = { ...s.appearOnlineByAccount };
     const readReceiptsByAccount = { ...s.readReceiptsByAccount };
     delete sendTypingByAccount[scope];
+    delete appearOnlineByAccount[scope];
     delete readReceiptsByAccount[scope];
-    void s.save({ sendTypingByAccount, readReceiptsByAccount });
+    void s.save({ sendTypingByAccount, appearOnlineByAccount, readReceiptsByAccount });
   };
 
   const receiptOptions: { value: ReadReceipts; label: string; hint: string }[] = [
@@ -60,6 +64,12 @@ export function TweaksSection() {
         hint='Sends "typing…" while you write. Off = they only see the message when it arrives.'
         checked={sendTyping}
         onChange={setSendTyping}
+      />
+      <Toggle
+        label="Appear online while a chat is open"
+        hint="Off = you never show as online. WhatsApp then sends you nothing either: no online, last seen or typing for your contacts."
+        checked={appearOnline}
+        onChange={setAppearOnline}
       />
       <div>
         <div className="text-sm mb-1">Read receipts (blue ticks)</div>

@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /**
- * Thin client for the native WhatsApp accounts served by `src-tauri/src/whatsapp.rs`:
+ * Thin client for the native WhatsApp accounts served by `src-tauri/src/whatsapp/`:
  * pairing, status, send text, and whatever chats and messages the running client has seen
  * since launch. App state built on it lives in `@/store/whatsapp`.
  */
@@ -37,6 +37,8 @@ export interface NativeChat {
   saved: boolean;
   /** Mute state mirrored from the phone: 0 = not muted, -1 = for good, else end time (epoch ms). Absent = unknown. */
   mutedUntil?: number | null;
+  /** Pin state mirrored from WhatsApp: epoch ms of the pin, 0 = unpinned there. Absent = unknown or pinned only in this app. */
+  pinnedAt?: number | null;
   /** Name of the community this group belongs to, if any. */
   community: string | null;
 }
@@ -56,7 +58,7 @@ export interface NativeMedia {
 /** The structured content of a poll, location or contact message; only the part matching
  * the message's `kind` is set. */
 export interface NativeInteractive {
-  poll?: { question: string; options: string[]; multiple: boolean };
+  poll?: { question: string; options: string[]; multiple: boolean; results?: NativePollResults };
   location?: {
     latitude: number;
     longitude: number;
@@ -65,6 +67,16 @@ export interface NativeInteractive {
     live: boolean;
   };
   contacts?: { name: string; phone: string | null }[];
+}
+
+/** The votes on a poll so far. */
+export interface NativePollResults {
+  /** Who picked each option (display names), in the poll's option order; your own choice is in `mine`. */
+  voters: string[][];
+  /** The options you picked. */
+  mine: string[];
+  /** The poll's key is stored, so it can be voted on here (polls stored before keys were kept can't). */
+  canVote: boolean;
 }
 
 export interface NativeMessage {
@@ -318,6 +330,12 @@ export const nativeWa = {
   /** React to a message; an empty `emoji` removes your reaction. */
   react: (id: string, chatId: string, messageId: string, emoji: string) =>
     invoke<void>("wa_native_react", { id, chatId, messageId, emoji }),
+  /** Send a poll; `multiple` lets voters pick any number of options. */
+  sendPoll: (id: string, chatId: string, question: string, options: string[], multiple: boolean) =>
+    invoke<void>("wa_native_send_poll", { id, chatId, question, options, multiple }),
+  /** Vote on a poll, replacing an earlier vote; an empty `options` withdraws it. */
+  pollVote: (id: string, chatId: string, messageId: string, options: string[]) =>
+    invoke<void>("wa_native_poll_vote", { id, chatId, messageId, options }),
   /** Edit one of your own messages. */
   edit: (id: string, chatId: string, messageId: string, text: string) => invoke<void>("wa_native_edit", { id, chatId, messageId, text }),
   /** Remove a message from this device only. */
@@ -395,7 +413,8 @@ export const nativeWa = {
   labelLink: (id: string, labelId: string, chatId: string, on: boolean) =>
     invoke<void>("wa_native_label_link", { id, labelId, chatId, on }),
   /** Pin or unpin a chat (syncs to the phone). */
-  pinChat: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_pin_chat", { id, chatId, on }),
+  /** `sync`: also pin/unpin on WhatsApp (max three there); otherwise the pin lives only in this app. */
+  pinChat: (id: string, chatId: string, on: boolean, sync: boolean) => invoke<void>("wa_native_pin_chat", { id, chatId, on, sync }),
   /** Archive or unarchive a chat (syncs to the phone). */
   archiveChat: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_archive_chat", { id, chatId, on }),
   /** Mute a chat until `until` (epoch ms, -1 = for good) or unmute it with null (syncs to the phone). */
@@ -479,3 +498,14 @@ export interface NativeTyping {
 
 export const onNativeTyping = (cb: (typing: NativeTyping) => void): Promise<UnlistenFn> =>
   listen<NativeTyping>("wa_native:typing", (event) => cb(event.payload));
+
+/** A contact went online or offline. `lastSeen` (unix ms) is null when their privacy hides it. */
+export interface NativePresence {
+  id: string;
+  chatIds: string[];
+  online: boolean;
+  lastSeen: number | null;
+}
+
+export const onNativePresence = (cb: (presence: NativePresence) => void): Promise<UnlistenFn> =>
+  listen<NativePresence>("wa_native:presence", (event) => cb(event.payload));

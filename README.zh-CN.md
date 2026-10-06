@@ -22,9 +22,12 @@
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white">
 </p>
 
-> **Wahana** 在印尼语中意为“交通工具 / 平台”。本项目是非官方客户端，与 WhatsApp 或 Meta 没有任何隶属、背书或关联。“WhatsApp” 是 Meta Platforms, Inc. 的商标。
+> **Wahana** 在印尼语中意为“交通工具 / 平台”。本项目是非官方客户端，并非由 WhatsApp 或 Meta 开发，与其没有任何隶属、背书或关联。“WhatsApp” 是 Meta Platforms, Inc. 的商标。
+
+> [!WARNING]
+> **使用 Wahana 的风险由你自行承担。** 使用非官方客户端可能违反 WhatsApp 的服务条款，WhatsApp 可能限制或永久封禁你关联的号码。群发、定时消息和自动回复会提高这一风险。
 >
-> 使用非官方客户端可能违反 WhatsApp 的服务条款，并可能导致你的号码被封禁，尤其是在进行批量发送或自动回复时。请自行承担风险。
+> 账号发生的任何后果均由你本人负责，与本项目无关。Wahana 按“现状”提供，不附带任何担保（见 [LICENSE](LICENSE)）。请谨慎使用，不要关联你无法承受失去的号码。
 
 ## 下载
 
@@ -80,6 +83,7 @@ Wahana **只是一个客户端**。没有 Wahana 后端、账号或云端。它�
 - 已读回执与“正在输入”（遵循隐私设置）、未读角标（列表、标签页、Dock / 托盘）、筛选标签（未读 / 私聊 / 群组 / 社群 / 频道），可拖动调整顺序
 - 置顶聊天、静音 8 小时 / 1 周 / 永久、草稿、标签（创建、重命名、删除、分配），全部与手机同步
 - 聊天内搜索、跳转到置顶消息、无限历史分页、导出为 `.txt` / `.html` / `.json`
+- 投票：通过输入框的 **+** 菜单创建（单选或多选）、参与投票，并实时查看票数与投票人；收到的位置和联系人以卡片形式显示
 
 **群组与联系人**
 
@@ -111,12 +115,12 @@ Wahana **只是一个客户端**。没有 Wahana 后端、账号或云端。它�
 
 **应用**
 
-- 首次启动引导：关联 WhatsApp，无需手动配置
+- 首次启动引导：先显示上方的风险提示，再关联 WhatsApp，无需手动配置
 - 系统托盘、桌面通知、键盘快捷键、浅色 / 深色主题
 - 隐私微调：是否发送“正在输入”、已读回执（始终 / 回复时 / 手动 / 从不）
 - 设置备份与恢复（含自动回复规则、主题、贴纸、账号名称）、自动更新
 
-**尚未支持**：位置、联系人和投票（显示为“不支持的消息”）、通话。
+**尚未支持**：发送位置和联系人、通话。在支持投票之前保存的投票无法在此投票，请在手机上操作。
 
 ## 开发
 
@@ -155,12 +159,15 @@ npm run tauri build     # macOS 生成 .dmg / .app，Windows 生成 .msi / .exe
 src/realtime/    定时发送、群发与自动回复的运行器，通知，更新
 src/store/       zustand 状态（settings、reactions、pins、drafts 等）与 SQLite 数据层
 src/screens/     聊天、动态、功能（Scheduler / Broadcast / Auto-reply / Knowledge / Tweaks / Quick replies）、账号、设置（settings/ = 每个区块一个文件）
-                 WhatsAppScreen + whatsapp/ = 配对、信息面板、群组工具、媒体、标签、动态、AI
+                 WhatsAppScreen + whatsapp/ = 聊天列表、会话、消息气泡、输入框、对话框、
+                 配对、信息面板、群组工具、媒体、标签、动态、AI
 src/components/  对话框、菜单、媒体、选择器
 src/lib/         WhatsApp markdown、AI 客户端、媒体缓存、密钥、备份；nativeWa.ts（命令与事件）、send.ts
 src-tauri/       Rust 外壳：钥匙串、媒体缓存、托盘、SQLite 迁移
-  whatsapp.rs    基于 whatsapp-rust 的原生客户端：账号、配对、事件、发送、媒体、群组、动态、标签
-  whatsapp_db.rs 按账号的 SQLite 聊天存储：chats、messages、媒体密钥、LID ↔ 手机号映射、标签
+  whatsapp/      基于 whatsapp-rust 的原生客户端，按领域分文件：账号、事件、历史、
+                 消息内容、消息、聊天、投票、媒体、群组、频道、动态、标签、信息
+  whatsapp_db/   按账号的 SQLite 聊天存储：chats、messages、媒体密钥、LID ↔ 手机号映射、
+                 标签、投票（mod.rs 负责表结构与迁移）
 ```
 
 ## 支持

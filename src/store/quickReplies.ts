@@ -20,12 +20,24 @@ export async function reassignUnownedQuickRepliesToAccount(account: string) {
   await (await db()).execute("UPDATE quick_replies SET account = $1 WHERE account IS NULL", [account]);
 }
 
-export async function saveQuickReply(r: Omit<QuickReply, "created_at">) {
+/** A shortcut as stored: one lowercase word without the leading "/". */
+export const normalizeShortcut = (s: string) => s.trim().replace(/^\//, "").toLowerCase();
+
+/** Why a shortcut/text pair cannot be saved, or null when it can. */
+export function quickReplyError(shortcut: string, text: string, others: QuickReply[], id?: string): string | null {
+  const s = normalizeShortcut(shortcut);
+  if (!s || /\s/.test(s)) return "Shortcut must be one word.";
+  if (!text.trim()) return "Text is required.";
+  if (others.some((r) => r.shortcut === s && r.id !== id)) return `/${s} is already used.`;
+  return null;
+}
+
+export async function saveQuickReply(r: Pick<QuickReply, "id" | "account" | "shortcut" | "text">) {
   await (
     await db()
   ).execute(
     "INSERT INTO quick_replies (id, account, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET account=excluded.account, shortcut=excluded.shortcut, text=excluded.text",
-    [r.id, r.account || null, r.shortcut.replace(/^\//, "").trim().toLowerCase(), r.text, Math.floor(Date.now() / 1000)],
+    [r.id, r.account || null, normalizeShortcut(r.shortcut), r.text, Math.floor(Date.now() / 1000)],
   );
 }
 

@@ -3,6 +3,7 @@ import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { load } from "@tauri-apps/plugin-store";
 import { getVersion } from "@tauri-apps/api/app";
 import { nativeWa } from "@/lib/nativeWa";
+import { MAX_ACCOUNTS } from "@/lib/account";
 import { useSettings, type Prefs } from "@/store/settings";
 import { getSecret, setSecret } from "@/lib/secrets";
 import { db } from "@/store/scheduler";
@@ -13,6 +14,7 @@ import { upsertRule, type AutoReplyRule } from "@/store/autoReply";
 import { addSticker, listStickers } from "@/lib/stickers";
 import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
 import type { QuickReply } from "@/store/quickReplies";
+import type { Template } from "@/store/templates";
 import type { Schedule } from "@/store/scheduler";
 
 export interface Backup {
@@ -34,6 +36,8 @@ export interface Backup {
   /** Since backup version 4. Messages pinned for everyone, keyed `session:chatId:bareId` → expiry (unix ms). */
   messagePins?: Record<string, number>;
   quickReplies: QuickReply[];
+  /** Absent in backups made before templates existed. */
+  templates?: Template[];
   schedules: Omit<Schedule, "media_b64">[];
   /** Since backup version 2. */
   autoReplyRules?: AutoReplyRule[];
@@ -72,11 +76,11 @@ function channelMuteKeys(): string[] {
   }
 }
 
-/** Outcome of re-creating one native account: added (needs a QR scan) or already here. */
+/** Outcome of re-creating one native account: added (needs a QR scan), already here, or over the limit. */
 export interface NativeRestore {
   id: string;
   name: string;
-  outcome: "added" | "exists";
+  outcome: "added" | "exists" | "skipped";
 }
 
 const BACKUP_VERSION = 4;
@@ -153,6 +157,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
     // Read from the live store so a pin made moments ago (still inside its write debounce) is included.
     messagePins: usePins.getState().items,
     quickReplies: await d.select<QuickReply[]>("SELECT * FROM quick_replies"),
+    templates: await d.select<Template[]>("SELECT * FROM templates"),
     schedules: await d.select<Omit<Schedule, "media_b64">[]>(
       "SELECT id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs FROM schedules",
     ),
@@ -211,10 +216,13 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
   const native: NativeRestore[] = [];
   if (opts.nativeAccounts && b.nativeAccounts?.length) {
     const here = new Set((await nativeWa.accounts()).map((a) => a.id));
+    let count = here.size;
     for (const { id, name } of b.nativeAccounts) {
       if (here.has(id)) native.push({ id, name, outcome: "exists" });
+      else if (count >= MAX_ACCOUNTS) native.push({ id, name, outcome: "skipped" });
       else {
         await nativeWa.add(id, name);
+        count += 1;
         native.push({ id, name, outcome: "added" });
       }
     }
@@ -259,6 +267,12 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
         [r.id, r.account ?? null, r.shortcut, r.text, r.created_at],
       );
     }
+    for (const t of b.templates ?? []) {
+      await d.execute(
+        "INSERT INTO templates (id, account, name, text, uses, last_used, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET account=excluded.account, name=excluded.name, text=excluded.text",
+        [t.id, t.account, t.name, t.text, t.uses ?? 0, t.last_used ?? null, t.created_at],
+      );
+    }
   }
   if (opts.schedules && b.schedules) {
     for (const sc of b.schedules) {
@@ -290,6 +304,8 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
           sc.anchor ?? null,
         ],
       );
+      // Attachments are not exported: drop any left over from the live schedule for this id.
+      await d.execute("DELETE FROM schedule_media WHERE schedule_id = $1", [sc.id]);
     }
   }
   if (opts.autoReplies && b.autoReplyRules) {

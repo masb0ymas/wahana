@@ -2,6 +2,7 @@ import { useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { Check, LogOut, Pencil, Play, Plus, Square, Trash2, UserPen, X } from "lucide-react";
 import { useWhatsApp } from "@/store/whatsapp";
+import { MAX_ACCOUNTS } from "@/lib/account";
 import { nativeWa, type NativeAccount, type NativeWaStatus } from "@/lib/nativeWa";
 import { ACCOUNT_COLORS, resolveStyle, useAccountStyle } from "@/store/accountStyle";
 import { Pairing } from "@/screens/whatsapp/Pairing";
@@ -48,6 +49,7 @@ function NativeAccountsSection() {
   const setActive = useWhatsApp((s) => s.setActive);
   const add = useWhatsApp((s) => s.add);
   const [err, setErr] = useState<string | null>(null);
+  const atLimit = accounts.length >= MAX_ACCOUNTS;
 
   return (
     <div className="space-y-3">
@@ -58,9 +60,10 @@ function NativeAccountsSection() {
         <NativeAccountCard key={a.id} account={a} active={a.id === active} onUse={() => setActive(a.id)} onError={setErr} />
       ))}
       {accounts.length === 0 && <p className="text-sm text-neutral-500">No WhatsApp account linked yet.</p>}
-      <Button variant="secondary" onClick={() => void add().catch((e) => setErr(errMsg(e)))}>
+      <Button variant="secondary" disabled={atLimit} onClick={() => void add().catch((e) => setErr(errMsg(e)))}>
         <Plus size={16} /> Link a WhatsApp account
       </Button>
+      {atLimit && <p className="text-xs text-neutral-500">At most {MAX_ACCOUNTS} accounts can be linked.</p>}
     </div>
   );
 }

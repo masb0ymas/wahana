@@ -1,22 +1,38 @@
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, Image as ImageIcon, FileText, Mic, MapPin, Contact, BarChart3, X, Loader2, Square, Plus, Trash2 } from "lucide-react";
+import {
+  Paperclip,
+  Image as ImageIcon,
+  FileText,
+  Mic,
+  MapPin,
+  Contact,
+  BarChart3,
+  MessageSquareText,
+  X,
+  Loader2,
+  Square,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { Button, Input, Label, MenuItem, Popover } from "@/components/ui";
 import { cn, errMsg } from "@/lib/utils";
 
-export type AttachKind = "image" | "file" | "voice" | "location" | "contact" | "poll";
+export type AttachKind = "image" | "file" | "voice" | "location" | "contact" | "poll" | "template";
 
-/** Paperclip popover listing the attachment types. */
-export function AttachMenu({ disabled, onPick }: { disabled?: boolean; onPick: (k: AttachKind) => void }) {
+/** "+" popover listing what can be attached; `kinds` limits it to what the chat can send. */
+export function AttachMenu({ disabled, kinds, onPick }: { disabled?: boolean; kinds?: AttachKind[]; onPick: (k: AttachKind) => void }) {
   const [open, setOpen] = useState(false);
 
-  const items: { k: AttachKind; icon: typeof Paperclip; label: string }[] = [
+  const all: { k: AttachKind; icon: typeof Paperclip; label: string }[] = [
     { k: "image", icon: ImageIcon, label: "Photo / video" },
     { k: "file", icon: FileText, label: "Document" },
     { k: "voice", icon: Mic, label: "Voice message" },
     { k: "location", icon: MapPin, label: "Location" },
     { k: "contact", icon: Contact, label: "Contact" },
     { k: "poll", icon: BarChart3, label: "Poll" },
+    { k: "template", icon: MessageSquareText, label: "Template" },
   ];
+  const items = kinds ? all.filter((it) => kinds.includes(it.k)) : all;
 
   return (
     <Popover
@@ -25,8 +41,8 @@ export function AttachMenu({ disabled, onPick }: { disabled?: boolean; onPick: (
       side="top"
       className="w-48 py-1"
       trigger={
-        <Button variant="ghost" size="icon" onClick={() => setOpen((o) => !o)} disabled={disabled} title="Attach">
-          {disabled ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
+        <Button variant="ghost" size="icon" onClick={() => setOpen((o) => !o)} disabled={disabled} title="Attach" aria-expanded={open}>
+          <Plus size={18} className={cn("transition-transform", open && "rotate-45")} />
         </Button>
       }
     >
@@ -298,7 +314,9 @@ export function PollDialog({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const clean = options.map((o) => o.trim()).filter(Boolean);
-  const ok = name.trim() && clean.length >= 2 && clean.length <= 12;
+  // Each option is identified by its text, so two alike could never be told apart.
+  const distinct = new Set(clean).size === clean.length;
+  const ok = name.trim() && clean.length >= 2 && clean.length <= 12 && distinct;
   return (
     <Dialog title="Create poll" onClose={onClose}>
       <div>
@@ -330,6 +348,7 @@ export function PollDialog({
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={multiple} onChange={(e) => setMultiple(e.target.checked)} /> Allow multiple answers
       </label>
+      {!distinct && <div className="text-xs text-red-600 dark:text-red-400">Each option must be different.</div>}
       <ErrorLine err={err} />
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose}>

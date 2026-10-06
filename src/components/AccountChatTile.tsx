@@ -29,15 +29,32 @@ const tileShell =
  * chat list and conversation behave exactly like the regular Chats tab (search, filters, pin,
  * mute, labels, context menu, read-all, select).
  */
-export function AccountChatTile({ account }: { account: NativeAccount }) {
+export function AccountChatTile({
+  account,
+  dragging,
+  handle,
+}: {
+  account: NativeAccount;
+  /** This tile is being dragged to a new place in the grid. */
+  dragging?: boolean;
+  /** Pointer handlers for the header strip, which is where a tile is picked up to reorder. */
+  handle?: React.HTMLAttributes<HTMLDivElement>;
+}) {
   const connected = account.status === "working";
   const { color, icon } = useAccountStyleFor(account.id);
   // The account's own profile picture, looked up from its own JID.
   const selfPicture = usePicture(account.id, account.me?.id ?? "", connected && !!account.me);
 
   return (
-    <div className={tileShell}>
-      <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800">
+    <div className={cn(tileShell, dragging && "opacity-70 ring-2 ring-wa-dark")}>
+      <div
+        {...handle}
+        title={handle ? "Drag to reorder" : undefined}
+        className={cn(
+          "shrink-0 flex items-center gap-2 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 select-none touch-none",
+          handle && (dragging ? "cursor-grabbing" : "cursor-grab"),
+        )}
+      >
         <span className={cn("w-2 h-2 rounded-full shrink-0", dotTone[account.status])} title={account.status} />
         <span className="shrink-0 rounded-full" style={{ boxShadow: `0 0 0 2px ${color}` }}>
           <Avatar src={selfPicture} name={account.me?.pushName ?? account.name} size={32} />

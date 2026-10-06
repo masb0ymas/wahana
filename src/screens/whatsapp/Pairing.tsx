@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Loader2 } from "lucide-react";
 import { useWhatsApp } from "@/store/whatsapp";
+import { UnofficialNotice } from "@/components/UnofficialNotice";
 
 /** The QR a native account is waiting for, while it is being linked. */
 export function Pairing({ accountId }: { accountId: string }) {
@@ -36,6 +37,7 @@ export function Pairing({ accountId }: { accountId: string }) {
           <li>Go to Settings → Linked devices</li>
           <li>Tap Link a device and scan this code</li>
         </ol>
+        <UnofficialNotice className="p-3 text-xs" />
       </div>
     </div>
   );

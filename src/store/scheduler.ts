@@ -4,6 +4,27 @@ export type Repeat = "once" | "daily" | "weekly" | "monthly";
 export type TargetType = "chat" | "status";
 export type Kind = "text" | "image" | "video" | "file";
 
+/** Most attachments one scheduled message may send. */
+export const MAX_SCHEDULE_ATTACHMENTS = 10;
+
+/** One attachment of a schedule, as stored in `schedule_media`. */
+export interface ScheduleMedia {
+  schedule_id: string;
+  position: number;
+  kind: Kind;
+  mime: string | null;
+  name: string | null;
+  b64: string;
+}
+
+/** An attachment ready to be written (order is the array order). */
+export interface MediaItem {
+  kind: Kind;
+  mime: string;
+  name: string;
+  b64: string;
+}
+
 export interface Schedule {
   id: string;
   /** `native:<accountId>`; `profile`/`session` are unused legacy columns. */
@@ -29,6 +50,8 @@ export interface Schedule {
   last_status: "ok" | "error" | "missed" | null;
   last_error: string | null;
   runs: number;
+  /** Number of attachments, from a subquery in list queries (blobs stay in `schedule_media`). */
+  media_count?: number;
 }
 
 export interface Run {
@@ -46,14 +69,41 @@ export const db = () => (dbPromise ??= Database.load("sqlite:wahana.db"));
 const COLS =
   "id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs";
 
+/** Attachment count for a list row; blobs themselves stay in `schedule_media`. */
+const MEDIA_COUNT = "(SELECT COUNT(*) FROM schedule_media m WHERE m.schedule_id = schedules.id) AS media_count";
+
 /** All schedules, or — with an account — only that account's. */
 export async function listSchedules(account?: string): Promise<Schedule[]> {
   const d = await db();
   return account === undefined
-    ? d.select<Schedule[]>(`SELECT ${COLS}, NULL AS media_b64 FROM schedules ORDER BY enabled DESC, next_run ASC`)
-    : d.select<Schedule[]>(`SELECT ${COLS}, NULL AS media_b64 FROM schedules WHERE account = $1 ORDER BY enabled DESC, next_run ASC`, [
-        account,
-      ]);
+    ? d.select<Schedule[]>(`SELECT ${COLS}, NULL AS media_b64, ${MEDIA_COUNT} FROM schedules ORDER BY enabled DESC, next_run ASC`)
+    : d.select<Schedule[]>(
+        `SELECT ${COLS}, NULL AS media_b64, ${MEDIA_COUNT} FROM schedules WHERE account = $1 ORDER BY enabled DESC, next_run ASC`,
+        [account],
+      );
+}
+
+/** Attachments of one schedule, in send order. */
+export async function listScheduleMedia(scheduleId: string): Promise<ScheduleMedia[]> {
+  const d = await db();
+  return d.select<ScheduleMedia[]>("SELECT * FROM schedule_media WHERE schedule_id = $1 ORDER BY position ASC", [scheduleId]);
+}
+
+/** Replace a schedule's attachments with `items` (array order becomes `position`). */
+export async function replaceScheduleMedia(scheduleId: string, items: MediaItem[]): Promise<void> {
+  const d = await db();
+  await d.execute("DELETE FROM schedule_media WHERE schedule_id = $1", [scheduleId]);
+  for (let i = 0; i < items.length; i++) {
+    const m = items[i]!;
+    await d.execute("INSERT INTO schedule_media (schedule_id, position, kind, mime, name, b64) VALUES ($1,$2,$3,$4,$5,$6)", [
+      scheduleId,
+      i,
+      m.kind,
+      m.mime,
+      m.name,
+      m.b64,
+    ]);
+  }
 }
 
 export async function getSchedule(id: string): Promise<Schedule | undefined> {
@@ -110,6 +160,7 @@ export async function setEnabled(id: string, enabled: boolean) {
 export async function deleteSchedule(id: string) {
   const d = await db();
   await d.execute("DELETE FROM schedule_runs WHERE schedule_id = $1", [id]);
+  await d.execute("DELETE FROM schedule_media WHERE schedule_id = $1", [id]);
   await d.execute("DELETE FROM schedules WHERE id = $1", [id]);
 }
 
